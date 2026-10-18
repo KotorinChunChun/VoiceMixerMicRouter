@@ -32,3 +32,7 @@ __pycache__/
 /plugins/rvc-cuda/output/
 /plugins/voice-extraction/runtime/
 /plugins/voice-extraction/models/
+
+/artifacts/
+/src/maintenance/bin/
+/src/maintenance/obj/

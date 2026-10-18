@@ -1,19 +1,28 @@
 # マイク常駐の現行仕様
 
-更新日：2026-10-19。対象版：1.0.17。この文書をマイク常駐アプリの仕様の正本とする。変更時は実装・回帰試験・本書を同時に更新する。過去の実装報告は変更の経緯であり、本書と異なる旧動作を現行仕様として扱わない。操作手順は[利用ガイド](mic-resident.md)、測定結果は[実機検証結果](../dev/testing/mic-resident-results.md)を参照。
+更新日：2026-10-19。対象版：1.0.18。この文書をマイク常駐アプリの仕様の正本とする。変更時は実装・回帰試験・本書を同時に更新する。過去の実装報告は変更の経緯であり、本書と異なる旧動作を現行仕様として扱わない。操作手順は[利用ガイド](mic-resident.md)、測定結果は[実機検証結果](../dev/testing/mic-resident-results.md)を参照。
 
 ## 対象と起動
 
-- アプリ名は `VoiceMixerMicRouter`。常駐・オーバーレイは `VoiceMixerMicRouter v1.0.17`、設定画面は `VoiceMixerMicRouter 設定 v1.0.17` をタイトルに表示する。Windows専用の `voicemixer-mic.exe`。VoiceMixer本体の画面やWebViewを開かず、共通音声エンジンと配置済みRVC CUDAプラグインを利用する。
+- アプリ名は `VoiceMixerMicRouter`。常駐・オーバーレイは `VoiceMixerMicRouter - ver 1.0.18`、設定画面は `設定 - VoiceMixerMicRouter - ver 1.0.18` をタイトルに表示する。Windows専用。インストーラ版は `VoiceMixerMicRouter.exe`、開発配備版は `voicemixer-mic.exe`。VoiceMixer本体の画面やWebViewを開かず、共通音声エンジンと配置済みRVC CUDAプラグインを利用する。
 - 本体とは独立して版を管理する。専用版番号のなかった従来版を1.0相当とし、専用版管理の開始を1.0.1とした。以後、明示指示がない限り3桁目だけを1ずつ増やす。常駐ウィンドウと設定画面のタイトルに版番号を表示する。
 - ユーザーのStartupに登録し、Windowsへのログイン時に起動する。既定は前回成功したモードの復元。設定でMIC／MIC-RVC／SPK-RVC／送信停止の固定にもできる。
 - 常駐は1プロセス。二重起動時の操作は既存プロセスへ渡す。終了時は音声ワーカーとRVC子プロセスを終了する。
-- 設定はEXEと同じフォルダーの `mic-settings.json` に独立保存する。VoiceMixer本体のプロジェクトを書き換えない。状態は `status.json` に保存する。
+- 設定は `--config` を優先し、指定がない場合は既存のEXE隣の `mic-settings.json`、なければ `%LOCALAPPDATA%/VoiceMixerMicRouter/mic-settings.json` を使う。VoiceMixer本体のプロジェクトを書き換えない。状態は `status.json` に保存する。
+
+
+## インストーラと管理契約（v1.0.18）
+
+- Windows 11 x64、ユーザー単位のInno Setup。製品識別はtool.jsonとEXEのProductName／FileVersionに保持する。RVCモデル・Python/CUDA・仮想デバイスドライバーは同梱しない。
+- 通常の初回起動は設定画面を開く。`--startup` は設定とオーバーレイを最初は非表示にし、保存済みのモードを復元する。二重startupは表示やモード変更を起こさない。起動失敗もダイアログを表示せず終了コードで返す。
+- `--launch-origin` は standalone／host_manual／direct_task／via_kotorintoys。SID所有・同一セッションの管理パイプでstatus/show/stopを受ける。show/stopのexpectedPid不一致を拒否し、設定表示・適用中の管理stopは拒否する。既存CLIの明示--stopとは別の安全条件を持つ。
+- 更新・削除は製品・正式導入先・PIDを照合し正常終了後に進む。強制終了しない。個人設定と利用者追加モデルを保持する。KotorinToysの登録がない場合はその設定を新規作成せず、登録済みの場合だけ対象の所有予約を照合して整理する。
+- KotorinToys本体の変更・登録は管理PCで行う。詳細は[導入](installation.md)と[管理契約・登録引き継ぎ](kotorintoys-integration.md)。
 
 ## 音声経路とRVC保持
 
 - MIC：入力マイク → モード選択 → ONの各出力。MIC-RVC：入力マイク → RVC入力選択 → RVC → モード選択 → ONの各出力。SPK-RVC：選択スピーカーの再生音（WASAPIループバック） → RVC入力選択 → 同じRVC → モード選択 → ONの各出力。RVC入力選択はMICとSPKを混合しない。スピーカー取得ワーカーはSPK-RVC中だけ起動する。
-- 出力は1（配信用）、2（音声入力用）、3（モニタ用）の3系統。同じ選択音声を送り、各出力のON／OFFとデバイスを独立して保存する。新規導入は出力1がON、出力2と3がOFF。既存の出力1指定とモニタリング設定は保持する。全出力OFFでも入力・常駐を維持する。
+- 出力は1（配信用）、2（音声入力用）、3（モニタ用）の3系統。同じ選択音声を送り、各出力のON／OFFとデバイスを独立して保存する。v1.0.18の新規導入は全出力OFF、送信停止、RVC無効。既存設定は変更しない。既存の出力1指定とモニタリング設定は保持する。全出力OFFでも入力・常駐を維持する。
 - 送信停止：モード選択の出力を無音にし、3出力のすべてへMIC音もRVC音も送らない。各出力のON／OFF設定は維持する。入力取得と入力メーターを停止し、常駐は継続する。起動時にこのモードを復元する場合も初めから無音の経路を作る。
 - 初回RVC選択時だけモデルを準備する。その後のMIC／MIC-RVC／SPK-RVC／送信停止の切替では同じモデル・プロセス・音声ノードを保持し、経路を切り替える。
 - 初回RVC読込ではモデル準備の `prepare` をバックグラウンドで実行する。読込中もMIC／送信停止へ切り替えられ、完了後は最新の選択モードを適用する。MICへ戻した後に読込が完了してもRVCへ勝手に切り替えない。

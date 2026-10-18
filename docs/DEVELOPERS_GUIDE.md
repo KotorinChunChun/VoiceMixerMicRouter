@@ -34,3 +34,16 @@ cargo test --manifest-path .\src\src-tauri\Cargo.toml --bin voicemixer-mic nativ
 ```
 
 音声試験のignoreは環境条件を確認して対象だけ解除します。--ignoredのみで全試験を走らせないでください。モデル、OS既定変更、録音等の追加条件は各テストに記載します。
+
+## 公開インストーラ（v1.0.18）
+
+.NET 10 SDKと上記Rust環境で実行します。実行時の.NET追加導入は不要です。Inno Setupは署名・固定SHA256検証後、artifacts内へローカル配置します。
+
+```powershell
+cd C:\develop\VoiceMixerMicRouter
+pwsh -File .\dev\scripts\Build-Installer.ps1 -RequireClean
+```
+
+配布EXEは静的CRT、helperは自己完結型です。artifacts/installersの実行別フォルダーへsetup、製品別台帳、SHA256、ソースコミット／ファイル一覧を生成します。公開するのはsetup・台帳・SHA256と導入／登録案内です。公開ビルドに-SkipBuildを使わず、クリーンな採用ソースから作り直してください。
+
+通常常駐を終了してから、生成したsetupをTest-Installer.ps1の-Installerへ渡すと、隔離先で新規導入・設定編集中の更新拒否・同版の更新・削除・保持を確認します。既存の正式導入があるPCでは試験を拒否します。別セッション・実ログイン・KotorinToys本体UIは管理PCの受入対象です。

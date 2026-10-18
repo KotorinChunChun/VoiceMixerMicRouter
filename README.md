@@ -9,7 +9,13 @@ VoiceMixer本体から独立したWin32アプリです。RVCモデルは初回�
 - [ビルド・開発](docs/DEVELOPERS_GUIDE.md)
 - [内部構造](docs/architecture/mic-resident.md)
 
-## ビルド
+## ダウンロード・インストール
+
+[GitHub Releases](https://github.com/KotorinChunChun/VoiceMixerMicRouter/releases/tag/v1.0.18)の `VoiceMixerMicRouter-1.0.18-setup.exe` を実行します。Windows 11 x64向けのユーザー単位インストーラです。Rustや.NETの事前導入は不要です。未署名の開発版として公開します。
+
+初回は送信停止、RVC・全出力OFFで設定画面を開きます。設定を適用してから必要な出力を有効にしてください。[導入・更新・削除](docs/installation.md)、[KotorinToysへの登録引き継ぎ](docs/kotorintoys-integration.md)を参照してください。KotorinToys側の登録作業は管理PCで行います。
+
+## ソースからビルド
 
 Windows、Rust MSVCツールチェーン、Visual StudioのC++ビルドツール／Windows SDKが必要です。
 
@@ -20,7 +26,7 @@ pwsh -File .\dev\scripts\Install-MicRouter.ps1 -SkipBuild -NoStartup -NoStart
 pwsh -File .\dev\scripts\Start-MicRouter.ps1 -Mode Settings
 ```
 
-初回設定には有効な録音・再生デバイスが必要です。RVCには別途、利用許諾のあるモデルとCUDA対応のPython実行環境が必要です。モデル・CUDA／Pythonランタイム・個人設定はこのリポジトリに含みません。初回配備スクリプトは設定がない場合だけ既定設定を生成します。既存の環境を使う場合はmic-settings.jsonのplugin_directoryに配置済みpluginsフォルダーを指定できます。
+録音・再生デバイスが未導入でも初回設定画面を開けます。音声の送信には接続可能なデバイスが必要です。RVCには別途、利用許諾のあるモデルとCUDA対応のPython実行環境が必要です。モデル・CUDA／Pythonランタイム・個人設定はこのリポジトリに含みません。初回配備スクリプトは設定がない場合だけ既定設定を生成します。既存の環境を使う場合はmic-settings.jsonのplugin_directoryに配置済みpluginsフォルダーを指定できます。
 
 ## ソースの由来
 

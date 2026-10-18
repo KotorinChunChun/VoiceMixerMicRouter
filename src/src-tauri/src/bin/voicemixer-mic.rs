@@ -37,9 +37,12 @@ fn main() {
     if let Err(error) = cli::run() {
         eprintln!("{error}");
         #[cfg(windows)]
-        if !std::env::args()
-            .any(|arg| matches!(arg.as_str(), "--check" | "--init" | "--status" | "--stop"))
-        {
+        if !std::env::args().any(|arg| {
+            matches!(
+                arg.as_str(),
+                "--check" | "--init" | "--status" | "--stop" | "--startup"
+            )
+        }) {
             ui::error(&error);
         }
         std::process::exit(1);
