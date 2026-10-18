@@ -118,6 +118,8 @@ pub fn run(
     path: PathBuf,
     initial: Option<Mode>,
     open_settings: bool,
+    silent: bool,
+    _launch_origin: String,
 ) -> Result<(), String> {
     let directory = path.parent().unwrap().to_path_buf();
     let mut desired = settings.available_mode(
@@ -126,10 +128,15 @@ pub fn run(
             .unwrap_or(settings.last_mode),
     );
     let mut generation = 1;
+    let display_mode = if silent {
+        config::OverlayMode::Off
+    } else {
+        settings.overlay_mode
+    };
     let mut ui = ui::Ui::new(
         desired,
         &settings.hotkeys,
-        settings.overlay_mode,
+        display_mode,
         settings.startup_mode,
         settings.monitoring,
         settings.noise_suppression(),
@@ -142,7 +149,7 @@ pub fn run(
     ui.cable_enabled = settings.cable_enabled;
     ui.voice_input_enabled = settings.voice_input_enabled;
     ui.set_display(
-        settings.overlay_mode,
+        display_mode,
         settings.monitoring,
         settings.noise_suppression(),
     )?;
@@ -493,6 +500,8 @@ pub fn run(
     _path: PathBuf,
     _initial: Option<Mode>,
     _open_settings: bool,
+    _silent: bool,
+    _launch_origin: String,
 ) -> Result<(), String> {
     Err("Windows専用です".into())
 }

@@ -2,7 +2,7 @@
 use super::super::{
     config::{
         device_choices, is_default_device, Hotkey, KeyHandling, Mode, OverlayMode, Settings,
-        APP_NAME, APP_VERSION, HOTKEY_COUNT, HOTKEY_LABELS, NOISE_PARAMETER,
+        HOTKEY_COUNT, HOTKEY_LABELS, NOISE_PARAMETER,
     },
     ui,
 };
@@ -74,7 +74,7 @@ impl SettingsWindow {
             let hwnd = CreateWindowExW(
                 WS_EX_CONTROLPARENT,
                 PCWSTR(wide(CLASS).as_ptr()),
-                PCWSTR(wide(&format!("{APP_NAME} 設定 v{APP_VERSION}")).as_ptr()),
+                PCWSTR(wide(&crate::window_title::WindowTitle::create("設定")).as_ptr()),
                 style,
                 CW_USEDEFAULT,
                 CW_USEDEFAULT,

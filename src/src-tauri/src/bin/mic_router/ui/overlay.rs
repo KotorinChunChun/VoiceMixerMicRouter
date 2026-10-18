@@ -1,5 +1,5 @@
 //! モード表示ウィンドウ。描画状態・クリック/ドラッグ・表示期限を所有する。
-use super::super::config::{Mode, OverlayMode, APP_NAME, APP_VERSION, HOTKEY_COUNT};
+use super::super::config::{Mode, OverlayMode, HOTKEY_COUNT};
 use super::super::telemetry::{self, Snapshot};
 use super::drawing::{draw_frame, paint_buffered};
 use super::{
@@ -458,7 +458,7 @@ impl Overlay {
             let window = CreateWindowExW(
                 WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED,
                 PCWSTR(wide(OVERLAY_CLASS).as_ptr()),
-                PCWSTR(wide(&format!("{APP_NAME} v{APP_VERSION}")).as_ptr()),
+                PCWSTR(wide(&crate::window_title::WindowTitle::create("")).as_ptr()),
                 WS_POPUP,
                 0,
                 0,
@@ -515,11 +515,11 @@ impl Overlay {
         *paint = content;
         changed
     }
-    pub(super) fn refresh(&mut self, title: &str, status: &str) -> Result<(), String> {
+    pub(super) fn refresh(&mut self, _title: &str, _status: &str) -> Result<(), String> {
         unsafe {
             let _ = SetWindowTextW(
                 self.hwnd,
-                PCWSTR(wide(&format!("{APP_NAME} v{APP_VERSION}：{title} / {status}")).as_ptr()),
+                PCWSTR(wide(&crate::window_title::WindowTitle::create("")).as_ptr()),
             );
             let _ = InvalidateRect(Some(self.hwnd), None, false);
         }

@@ -1,5 +1,5 @@
 //! WebView不要のトレイ、グローバルキー、フォーカスを奪わないモード表示。
-use super::config::{Hotkey, Mode, OverlayMode, APP_NAME, APP_VERSION, HOTKEY_COUNT};
+use super::config::{Hotkey, Mode, OverlayMode, HOTKEY_COUNT};
 use super::hotkeys::RemoteHotkeys;
 use super::telemetry::Snapshot;
 use crate::actions::{shortcut_badge, shortcut_index, HOTKEY_COMMANDS};
@@ -70,7 +70,7 @@ pub fn error(message: &str) {
         MessageBoxW(
             None,
             PCWSTR(wide(message).as_ptr()),
-            PCWSTR(wide(APP_NAME).as_ptr()),
+            PCWSTR(wide(&crate::window_title::WindowTitle::create("エラー")).as_ptr()),
             MB_OK | MB_ICONERROR,
         );
     }
@@ -139,7 +139,7 @@ impl Ui {
             let hwnd = CreateWindowExW(
                 WINDOW_EX_STYLE::default(),
                 PCWSTR(wide(CLASS).as_ptr()),
-                PCWSTR(wide(&format!("{APP_NAME} v{APP_VERSION}")).as_ptr()),
+                PCWSTR(wide(&crate::window_title::WindowTitle::create("")).as_ptr()),
                 WINDOW_STYLE::default(),
                 0,
                 0,

@@ -1,6 +1,6 @@
 [package]
 name = "voicemixer-mic-router"
-version = "1.0.17"
+version = "1.0.18"
 edition = "2021"
 rust-version = "1.85"
 autobins = false
@@ -80,3 +80,6 @@ windows = { version = "0.62", features = [
 tempfile = "3"
 proptest = "1"
 
+
+[build-dependencies]
+winresource = "0.1.31"

@@ -30,9 +30,14 @@ struct Options {
     mode: Option<Mode>,
     action: Option<usize>,
     status: bool,
+    startup: bool,
+    launch_origin: String,
 }
 impl Options {
     fn command(&self) -> usize {
+        if self.startup && self.mode.is_none() && self.action.is_none() {
+            return 0;
+        }
         self.action.unwrap_or(match self.mode {
             Some(Mode::Direct) => actions::DIRECT,
             Some(Mode::Rvc) => actions::RVC,
@@ -55,10 +60,23 @@ fn parse(
         mode: None,
         action: None,
         status: false,
+        startup: false,
+        launch_origin: "standalone".into(),
     };
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--startup" => options.startup = true,
+            "--launch-origin" => {
+                let origin = args.next().ok_or("--launch-originの値が必要です")?;
+                if !matches!(
+                    origin.as_str(),
+                    "standalone" | "host_manual" | "direct_task" | "via_kotorintoys"
+                ) {
+                    return Err("起動経路が不正です".into());
+                }
+                options.launch_origin = origin;
+            }
             "--config" => {
                 options.path = PathBuf::from(args.next().ok_or("--configの値が必要です")?)
             }
@@ -96,9 +114,11 @@ fn parse(
 }
 
 pub fn run() -> Result<(), String> {
-    let default_path = std::env::current_exe()
-        .map_err(|e| e.to_string())?
-        .with_file_name("mic-settings.json");
+    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
+    let local = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .ok_or("LocalAppDataがありません")?;
+    let default_path = crate::startup::default_config(&executable, &local);
     let options = match parse(std::env::args().skip(1), default_path)? {
         Invocation::Version => {
             println!("{}", config::APP_VERSION);
@@ -119,6 +139,8 @@ pub fn run() -> Result<(), String> {
         mode,
         action,
         status,
+        startup,
+        launch_origin,
     } = options;
     if let Some(plugins) = init {
         if path.exists() {
@@ -127,6 +149,19 @@ pub fn run() -> Result<(), String> {
         Settings::detect(&plugins)?.save(&path)?;
         return Ok(());
     }
+    let new_settings = if !path.exists()
+        && check.is_none()
+        && !status
+        && (action.is_none() || action == Some(actions::SETTINGS))
+    {
+        let folder = executable
+            .parent()
+            .ok_or("アプリの配置先がありません")?
+            .join("plugins");
+        crate::startup::initialize(&path, &folder)?
+    } else {
+        false
+    };
     let path = std::fs::canonicalize(path).map_err(|e| e.to_string())?;
     let directory = path.parent().ok_or("設定の保存先がありません")?;
     if status {
@@ -176,7 +211,14 @@ pub fn run() -> Result<(), String> {
     };
     let settings = Settings::load(&path)?;
     let Some(mode) = check else {
-        return super::resident::run(settings, path, mode, action == Some(actions::SETTINGS));
+        return super::resident::run(
+            settings,
+            path,
+            mode,
+            action == Some(actions::SETTINGS) || (new_settings && !startup),
+            startup,
+            launch_origin,
+        );
     };
     let mut session = engine::start(&settings, directory, mode)?;
     let started = Instant::now();

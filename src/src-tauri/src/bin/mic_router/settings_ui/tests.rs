@@ -1,5 +1,5 @@
 //! 設定値の検証と実機GUIの往復・配置回帰試験。
-use super::super::config::{Mode, OverlayMode, APP_NAME, APP_VERSION, NOISE_PARAMETER};
+use super::super::config::{Mode, OverlayMode, NOISE_PARAMETER};
 use super::controls::{checked, select, selection, set_checked, set_text, text};
 use super::parameters::parse_parameter;
 use super::*;
@@ -63,7 +63,10 @@ fn settings_controls_roundtrip_and_page_layout() {
         Mode::SpeakerRvc,
     )
     .unwrap();
-    assert_eq!(text(window.hwnd), format!("{APP_NAME} 設定 v{APP_VERSION}"));
+    assert_eq!(
+        text(window.hwnd),
+        crate::window_title::WindowTitle::create("設定")
+    );
     assert_eq!(window.devices.len(), 5);
     for field in &window.devices {
         assert_eq!(field.devices[0].0, "default://console");

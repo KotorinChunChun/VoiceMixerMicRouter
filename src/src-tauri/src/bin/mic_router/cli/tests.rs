@@ -174,3 +174,24 @@ fn repeated_options_keep_the_last_value_without_reordering_config() {
         assert_eq!(parsed.mode, Some(Mode::Rvc));
     }
 }
+
+#[test]
+fn management_start_arguments_preserve_origin_and_suppress_existing_window_show() {
+    for origin in [
+        "standalone",
+        "host_manual",
+        "direct_task",
+        "via_kotorintoys",
+    ] {
+        let value = options(&["--startup", "--launch-origin", origin]);
+        assert!(value.startup);
+        assert_eq!(value.launch_origin, origin);
+        assert_eq!(value.command(), 0);
+    }
+    assert!(parse_args(&["--launch-origin"]).is_err());
+    assert!(parse_args(&["--launch-origin", "unknown"]).is_err());
+    assert_eq!(
+        options(&["--startup", "--settings"]).command(),
+        actions::SETTINGS
+    );
+}
