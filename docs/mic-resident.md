@@ -2,7 +2,7 @@
 
 VoiceMixer本体の画面を開かずに、マイクや指定スピーカーの再生音を、配信用・音声入力用・モニタ用の3出力へ送ります。ログイン時に起動し、前回正常に動作したモードと保存済みの出力状態を復元します。
 
-更新日：2026-10-19。アプリ名は **VoiceMixerMicRouter**、常駐ツールの版は **1.0.16** です。本体とは独立して管理し、常駐ウィンドウと設定画面のタイトルにも表示します。以後、特別な指定がなければ末尾の数字を1ずつ増やします。
+更新日：2026-10-19。アプリ名は **VoiceMixerMicRouter**、常駐ツールの版は **1.0.17** です。本体とは独立して管理し、常駐ウィンドウと設定画面のタイトルにも表示します。以後、特別な指定がなければ末尾の数字を1ずつ増やします。
 
 変更時に守る動作と既定値は[現行仕様書](mic-resident-spec.md)にまとめています。
 
@@ -90,7 +90,7 @@ SPK-RVCで入力スピーカーとONの出力が同じ場合は、送信を止�
 PowerShell 7で実行します。常駐済みの場合は既存のプロセスを切り替えます。
 
 ```powershell
-cd C:\develop\VoiceMixer
+cd C:\develop\VoiceMixerMicRouter
 pwsh -File .\dev\scripts\Start-MicDirect.ps1
 pwsh -File .\dev\scripts\Start-MicRvc.ps1
 ```
@@ -118,13 +118,13 @@ pwsh -File .\dev\scripts\Start-MicRouter.ps1 -Mode ReleaseRvc
 ## 配備と自動起動
 
 ```powershell
-cd C:\develop\VoiceMixer
+cd C:\develop\VoiceMixerMicRouter
 pwsh -File .\dev\scripts\Install-MicRouter.ps1
 ```
 
 `release/MicRouter/` に最適化済みEXEを置き、現在のユーザーのスタートアップにショートカットを登録して起動します。既存の設定は保持します。更新時は先に常駐を終了してください。
 
-RVCはリポジトリ内 `plugins/rvc-cuda` の配置済みモデル・CUDA実行環境を使用します。EXEだけを別PCへコピーしてもRVCは動作しません。初期設定は接続中の既定の実マイク、出力1に通常のVB-CABLE、出力2にCABLE-D（初期OFF）、KahoA（ピッチ+10、rmvpe）です。Windows既定デバイスは変更しません。
+RVCはmic-settings.jsonのplugin_directoryに指定したpluginsフォルダー内のモデル・CUDA実行環境を使用します。EXEだけを別PCへコピーしてもRVCは動作しません。初期設定は接続中の既定の実マイク、出力1に通常のVB-CABLE、出力2にCABLE-D（初期OFF）、KahoA（ピッチ+10、rmvpe）です。Windows既定デバイスは変更しません。
 
 自動起動解除：
 
@@ -149,7 +149,7 @@ pwsh -File .\dev\scripts\Unregister-MicRouterStartup.ps1
 デバッグ起動：
 
 ```powershell
-cd C:\develop\VoiceMixer
+cd C:\develop\VoiceMixerMicRouter
 cargo run --manifest-path .\src\src-tauri\Cargo.toml --bin voicemixer-mic -- --config .\release\MicRouter\mic-settings.json
 ```
 
@@ -167,4 +167,7 @@ P2T押下中の出力ボタンは青い背景と`P2T`の文字で通常ONと区�
 
 キー設定はオーバーレイに合わせ、表示・ノイズ・設定画面、入力、出力の3群に並び、群の間に区切り線があります。出力ごとの押している間ONは各切替の直下です。現在の旧既定Alt+F5〜F12はShiftへ移行し、独自割当・無効行・なしを保持します。独自のShift割当と競合する旧既定はAltのまま残します。
 
-基本設定の下部に「ブラウザ音声キャプチャのインストール案内」「ブラウザ音声キャプチャの設定案内」があります。同梱の[案内](browser-capture-guide.html)をブラウザで開きます。MicRouterへは指定スピーカーの再生音、または別の受信アプリから仮想ケーブルに送った音をSPK-RVCで渡します。拡張を自動インストールしたり、MicRouterへPCMを直接接続したりする操作ではありません。
+基本設定の「公開GitHub」から[独立リポジトリ](https://github.com/KotorinChunChun/VoiceMixerMicRouter)を開けます。
+
+モデルとIndexはコンボボックスへ任意のフルパスを直接入力・貼り付けできます。「フォルダーを開く」は入力中のファイルの親フォルダーを開きます。空欄なら既定の保存フォルダーを開き、存在しない場所は作成せずエラーを表示します。各RVCラベルと短いノイズ抑制にマウスを重ねると原理・影響・再起動要否を確認できます。
+

@@ -1,6 +1,6 @@
 # マイク常駐の内部構造
 
-常駐1.0.16の構成。[現行仕様](../mic-resident-spec.md)が利用者向けの動作の正本で、本書は保守時の変更箇所と境界を示す。本体と共通の音声エンジンは[Backend補足](backend-overview.md)を参照する。
+常駐1.0.17の構成。[現行仕様](../mic-resident-spec.md)が利用者向けの動作の正本で、本書は保守時の変更箇所と境界を示す。本体と共通の音声エンジンは[開発者ガイド](../DEVELOPERS_GUIDE.md)を参照する。
 
 ## 責務と変更箇所
 
@@ -37,7 +37,7 @@
 
 ### 1. 変更箇所と試験を対応させる
 
-現行仕様・関連ソース・最新の完了記録を確認し、既存の利用者変更を保持する。古い未チェック行だけで完了済み工程を再開しない。動作契約は[現行仕様](../mic-resident-spec.md)、各回の事実は[実機検証結果](../../dev/testing/mic-resident-results.md)、未確定の診断は[後続確認](../../dev/roadmap/verification-followups.md)を参照する。
+現行仕様・関連ソース・最新の完了記録を確認し、既存の利用者変更を保持する。古い未チェック行だけで完了済み工程を再開しない。動作契約は[現行仕様](../mic-resident-spec.md)、各回の事実は[実機検証結果](../../dev/testing/mic-resident-results.md)を参照する。
 
 | 変更対象 | 選ぶ試験・根拠 |
 |---|---|
@@ -56,7 +56,7 @@
 以下を順に実行し、各終了コードを確認する。既存の開発差分を含む全体フォーマットを無条件に適用せず、変更ファイルを対象にする。共通BackendやPythonを変更した場合は、その変更を覆う試験も追加する。
 
 ```powershell
-cd C:\develop\VoiceMixer
+cd C:\develop\VoiceMixerMicRouter
 cargo test --manifest-path src/src-tauri/Cargo.toml --bin voicemixer-mic
 cargo check --manifest-path src/src-tauri/Cargo.toml --bin voicemixer-mic --all-features
 cargo build --manifest-path src/src-tauri/Cargo.toml --release --bin voicemixer-mic
@@ -69,14 +69,14 @@ TEMP権限で試験が失敗する環境では、現在の試験プロセスの 
 開始前に対象EXEのパス・PIDと元のモード／設定を確認する。利用中の常駐を止める場合は音声が一時停止することを知らせ、GUIでキー・フォーカス・カーソルを操作する前にも案内する。通常終了を待ち、試験用プロセスと本番の常駐を同時に動かさない。設定・退避データは公開成果物やGitへ含めない。
 
 ```powershell
-cd C:\develop\VoiceMixer
+cd C:\develop\VoiceMixerMicRouter
 pwsh -File .\dev\scripts\Start-MicRouter.ps1 -Mode Stop
 # 対象プロセスの終了を確認してから、必要な試験を実行する。
 cargo test --manifest-path src/src-tauri/Cargo.toml --bin voicemixer-mic native_commands_menu_icons_and_nonactivating_overlay -- --ignored --test-threads=1
 cargo test --manifest-path src/src-tauri/Cargo.toml --bin voicemixer-mic settings_controls_roundtrip_and_page_layout -- --ignored --test-threads=1
 ```
 
-[既存ライフサイクル試験](../../dev/scripts/tests/Test-MicRouterLifecycle.ps1)は旧構成向けの参考とする。配備済みEXEと別設定フォルダーを使い、準備後の切替、モデル・ノード保持、明示解放、停止保存と復元を検査する構成だが、現行の稼働対象に判定を合わせるまでは、そのまま検証に使用しない。`Wait-Mode`は一部の例外を除く全ノードをrunning必須とするため、MIC中に停止するSPK入力やOFF出力も待ってタイムアウトし得る。これはソース照合による所見であり、今回タイムアウトを実測したものではない。また、読込完了前のMIC復帰を検査する工程もない。今回の文書整理では同スクリプトを再実行・拡張していない。
+実機試験は独立版の専用GUIと、対象の音声シナリオを選んで実施する。
 
 背景準備を変更した場合は、次のシナリオも現行診断項目に合わせて確認する。過去の一時スクリプトや特定PIDに依存させない。
 
@@ -93,7 +93,7 @@ cargo test --manifest-path src/src-tauri/Cargo.toml --bin voicemixer-mic setting
 配備前に元のEXEと設定を退避し、通常終了を確認する。更新先は既存の配備先を使用する。既存Startupを変更せず配備する場合は次のコマンドを使う。
 
 ```powershell
-cd C:\develop\VoiceMixer
+cd C:\develop\VoiceMixerMicRouter
 pwsh -File .\dev\scripts\Install-MicRouter.ps1 -SkipBuild -NoStartup -NoStart
 pwsh -File .\dev\scripts\Start-MicRouter.ps1
 ```
@@ -109,7 +109,7 @@ pwsh -File .\dev\scripts\Start-MicRouter.ps1
 検証用プロセスは終了し、継続利用する配備版は依頼された状態に戻す。GUI操作終了を知らせ、変更点・検証範囲・制約とともに、起動中でも任意の作業フォルダーから実行できる起動コマンドを載せる。人へ追加試験を依頼する場合は[利用ガイドのデバッグ起動](../mic-resident.md#設定診断)を案内する。
 
 ```powershell
-pwsh -File "C:\develop\VoiceMixer\dev\scripts\Start-MicRouter.ps1"
+pwsh -File "C:\develop\VoiceMixerMicRouter\dev\scripts\Start-MicRouter.ps1"
 ```
 
 ## 押下中ONの境界
@@ -140,4 +140,5 @@ P2T押下中の出力ボタンは青い背景と`P2T`の文字で通常ONと区�
 
 Hotkey.handlingは既存設定でCoexistを補う。KeyStateは抑止した主キーを解放まで記録する。上書きkeydownはOSのGetAsyncKeyStateへ反映されないため、その主キーを非同期状態だけで解放扱いにしない。修飾キーの解放ではP2Tを解除し、主キーのkeyupは引き続き抑止して対を保つ。MSTSC前景時のフック再登録と、非同期キー状態を使わない判断を維持する。無効なRVC関連キーは有効割当から外す。
 
-旧既定のShift移行はhotkey_defaults_revisionで一度だけ判定する。保存添字は維持し、表示順だけ変更する。列IDも旧Shift=1/Ctrl=2/Windows=3/Alt=4/主キー=5を保ち、ネイティブ部品の作成順をCtrl→Shift→Alt→Windows→主キーへ揃える。共存/上書きは列6。設定画面の幅は960px、文字16pxを維持する。案内は標準Buttonのowner-drawでリンク風に描画し、クリックと標準キー操作から同梱HTMLのinstall/settings節を開く。comctl32 v6の有効化に依存せず、下線・指カーソル・フォーカス枠を表示する。
+旧既定のShift移行はhotkey_defaults_revisionで一度だけ判定する。保存添字は維持し、表示順だけ変更する。列IDも旧Shift=1/Ctrl=2/Windows=3/Alt=4/主キー=5を保ち、ネイティブ部品の作成順をCtrl→Shift→Alt→Windows→主キーへ揃える。共存/上書きは列6。設定画面の幅は960px、文字16pxを維持する。公開GitHubリンクは標準Buttonのowner-drawを使い、下線・指カーソル・フォーカス枠を表示する。RVC各項目と短音抑制は標準Tooltipを使い、文字列とサブクラスの寿命を設定窓に合わせる。comctl32 v6の有効化に依存しないようTTTOOLINFOWはV2サイズで登録する。モデルのフォルダー解決はplugin基準の相対パスと絶対パスを区別し、未保存入力を使う。
+

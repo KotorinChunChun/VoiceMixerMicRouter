@@ -8,7 +8,9 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $Directory = [IO.Path]::GetFullPath($Directory)
 $manifest = Join-Path $projectRoot 'src/src-tauri/Cargo.toml'
-$build = Join-Path $projectRoot 'src/src-tauri/target/release/voicemixer-mic.exe'
+$metadata = & cargo metadata --no-deps --format-version 1 --manifest-path $manifest | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) { throw 'Cargoのビルド出力先を取得できません。' }
+$build = Join-Path $metadata.target_directory 'release/voicemixer-mic.exe'
 if (-not $SkipBuild) {
     & cargo build --manifest-path $manifest --release --bin voicemixer-mic
     if ($LASTEXITCODE -ne 0) { throw '常駐アプリのビルドに失敗しました。' }
@@ -24,7 +26,6 @@ if (-not (Test-Path -LiteralPath $config)) {
     if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $config)) { throw '設定生成に失敗しました。既定の実マイクとVB-CABLEの接続を確認してください。' }
 }
 Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/mic-resident.md') -Destination (Join-Path $Directory '使い方.md') -Force
-Copy-Item -LiteralPath (Join-Path $projectRoot 'docs/browser-capture-guide.html') -Destination (Join-Path $Directory 'browser-capture-guide.html') -Force
 if (-not $NoStartup) {
     $startup = [Environment]::GetFolderPath('Startup')
     $shortcutPath = Join-Path $startup 'VoiceMixer Mic Router.lnk'
@@ -44,3 +45,4 @@ if (-not $NoStartup) {
 if (-not $NoStart) { & (Join-Path $PSScriptRoot 'Start-MicRouter.ps1') -Directory $Directory }
 Write-Host "配備先: $Directory"
 Write-Host "設定: $config"
+

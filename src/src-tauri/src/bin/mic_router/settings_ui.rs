@@ -31,6 +31,8 @@ mod parameters;
 #[cfg(test)]
 #[path = "settings_ui/tests.rs"]
 mod tests;
+#[path = "settings_ui/tooltip.rs"]
+mod tooltip;
 
 const CLASS: &str = "VoiceMixerMicSettingsV1";
 const TAB: usize = 12;
@@ -60,7 +62,7 @@ unsafe extern "system" fn proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LR
                 return LRESULT(1);
             }
         }
-        WM_SETCURSOR if matches!(unsafe { GetDlgCtrlID(HWND(w.0 as *mut _)) }, 260 | 261) => {
+        WM_SETCURSOR if matches!(unsafe { GetDlgCtrlID(HWND(w.0 as *mut _)) }, 260) => {
             unsafe {
                 if let Ok(cursor) = LoadCursorW(None, IDC_HAND) {
                     SetCursor(Some(cursor));
@@ -132,6 +134,7 @@ pub struct SettingsWindow {
     pub hwnd: HWND,
     font: HFONT,
     link_font: HFONT,
+    tips: Option<tooltip::Tooltips>,
     icon: HICON,
     base: Settings,
     pages: [Vec<HWND>; 3],
@@ -159,6 +162,7 @@ impl Drop for SettingsWindow {
     fn drop(&mut self) {
         unsafe {
             WINDOW.store(0, Ordering::Relaxed);
+            self.tips.take();
             let _ = DestroyWindow(self.hwnd);
             if !self.icon.is_invalid() {
                 let _ = DestroyIcon(self.icon);

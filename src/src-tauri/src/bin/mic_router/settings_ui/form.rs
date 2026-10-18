@@ -9,7 +9,9 @@ use super::super::{
 use super::{
     controls::{checked, select, selection, set_checked, set_text, text, wide},
     display_order,
-    parameters::{parameter_label, parameter_text, parameter_value_changed, parse_parameter},
+    parameters::{
+        parameter_help, parameter_label, parameter_text, parameter_value_changed, parse_parameter,
+    },
     Action, DeviceControl, ParameterControl, SettingsWindow, ACTIONS, CANCEL, CLASS, CLIENT_HEIGHT,
     CLIENT_WIDTH, HOTKEY_BASE, SAVE, TAB, WINDOW,
 };
@@ -113,6 +115,7 @@ impl SettingsWindow {
                     description.lfUnderline = 1;
                     CreateFontIndirectW(&description)
                 },
+                tips: None,
                 icon: HICON::default(),
                 base: settings.clone(),
                 pages: std::array::from_fn(|_| Vec::new()),
@@ -149,6 +152,7 @@ impl SettingsWindow {
             {
                 return Err("設定タブを初期化できません".into());
             }
+            s.tips = Some(super::tooltip::Tooltips::new(hwnd, font)?);
             s.tab = s.control(
                 "SysTabControl32",
                 "",
@@ -219,18 +223,18 @@ impl SettingsWindow {
         inputs: &[AudioDeviceInfo],
         outputs: &[AudioDeviceInfo],
     ) -> Result<(), String> {
-        self.label("オーバーレイ表示", 20, 80, 215, 28, 0)?;
+        self.label("オーバーレイ表示", 20, 80, 165, 28, 0)?;
         self.overlay = self.combo(
             &OverlayMode::ALL.map(|m| m.label().into()),
             settings.overlay_mode.label(),
             false,
-            240,
+            190,
             80,
-            210,
+            545,
             200,
             0,
         )?;
-        self.label("ログイン時のモード", 20, 126, 215, 27, 0)?;
+        self.label("ログイン時のモード", 20, 126, 165, 27, 0)?;
         let modes = vec![
             "前回のモード".into(),
             "MIC".into(),
@@ -238,7 +242,7 @@ impl SettingsWindow {
             "SPK-RVC".into(),
             "送信停止".into(),
         ];
-        self.startup = self.combo(&modes, "前回のモード", false, 240, 126, 300, 220, 0)?;
+        self.startup = self.combo(&modes, "前回のモード", false, 190, 126, 545, 220, 0)?;
         select(
             self.startup,
             match settings.startup_mode {
@@ -356,29 +360,25 @@ impl SettingsWindow {
             221,
             0,
         )?;
-        for (id, title, y) in [
-            (260, "ブラウザ音声キャプチャのインストール案内", 492),
-            (261, "ブラウザ音声キャプチャの設定案内", 532),
-        ] {
-            let link = self.control(
-                "BUTTON",
-                title,
-                BS_OWNERDRAW as u32,
-                id,
-                20,
-                y,
-                560,
-                28,
-                Some(0),
-            )?;
-            unsafe {
-                SendMessageW(
-                    link,
-                    WM_SETFONT,
-                    Some(WPARAM(self.link_font.0 as usize)),
-                    Some(LPARAM(1)),
-                );
-            }
+        self.tip(self.noise, super::tooltip::NOISE_HELP)?;
+        let link = self.control(
+            "BUTTON",
+            "公開GitHub",
+            BS_OWNERDRAW as u32,
+            260,
+            20,
+            492,
+            560,
+            28,
+            Some(0),
+        )?;
+        unsafe {
+            SendMessageW(
+                link,
+                WM_SETFONT,
+                Some(WPARAM(self.link_font.0 as usize)),
+                Some(LPARAM(1)),
+            );
         }
         Ok(())
     }
@@ -446,6 +446,18 @@ impl SettingsWindow {
             )?;
             self.keys[i] = controls;
         }
+        self.label(
+            "共存：このツールで操作し、同じキー入力をOSや他のアプリにも渡します。",
+            20,
+            520,
+            905,
+            28,
+            1,
+        )?;
+        self.label(
+            "上書き：このツールで操作し、一致した主キーの入力を他のアプリへ渡さないようにします。\n修飾キー単独やOSの保護された操作など、抑止できない入力があります。",
+            20, 552, 905, 54, 1,
+        )?;
         Ok(())
     }
 
@@ -456,6 +468,8 @@ impl SettingsWindow {
     ) -> Result<(), String> {
         self.rvc_enabled =
             self.checkbox("RVCを使用する", settings.rvc_enabled, 20, 65, 210, 222, 2)?;
+        self.tip(self.rvc_enabled,
+            "OFFにするとRVCを停止し、MICと送信停止だけを使用します。設定値は保持します。ONに戻した後、RVCモードを選ぶとモデルの準備を開始します。適用するまで稼働状態は変わりません。")?;
         self.label(
             "＊の項目を変更するとRVCを再起動します。その他は起動中にも反映します。",
             20,
@@ -477,14 +491,26 @@ impl SettingsWindow {
             let handle = if p.kind == ParameterKind::File {
                 let y = 135 + file_row * 42;
                 file_row += 1;
-                self.label(&label, 20, y, 180, 26, 2)?;
+                let title = self.label(&label, 20, y, 180, 26, 2)?;
+                self.tip(title, &parameter_help(&p))?;
+                self.control(
+                    "BUTTON",
+                    "フォルダーを開く",
+                    BS_PUSHBUTTON as u32,
+                    450 + i,
+                    740,
+                    y,
+                    190,
+                    28,
+                    Some(2),
+                )?;
                 self.combo(
                     &p.options,
                     value.as_str().unwrap_or(""),
                     true,
                     210,
                     y,
-                    595,
+                    520,
                     300 + i,
                     2,
                 )?
@@ -503,7 +529,8 @@ impl SettingsWindow {
                         2,
                     )?
                 } else {
-                    self.label(&label, x, y, 244, 24, 2)?;
+                    let title = self.label(&label, x, y, 244, 24, 2)?;
+                    self.tip(title, &parameter_help(&p))?;
                     let handle = if p.kind == ParameterKind::Enum {
                         self.combo(
                             &p.options,
@@ -531,10 +558,11 @@ impl SettingsWindow {
                     handle
                 }
             };
+            self.tip(handle, &parameter_help(&p))?;
             self.parameters.push(ParameterControl { schema: p, handle });
         }
         self.label(
-            "モデルとIndexにはプラグイン内の相対パス、またはファイルの絶対パスを指定できます。",
+            "モデルとIndexは任意のフルパスを直接入力・貼り付けできます。相対パスはプラグイン基準です。",
             20,
             568,
             800,
@@ -547,6 +575,9 @@ impl SettingsWindow {
     pub(super) fn page(&self, index: usize) {
         if index >= self.pages.len() {
             return;
+        }
+        if let Some(tips) = &self.tips {
+            tips.pop();
         }
         unsafe {
             SendMessageW(self.tab, TCM_SETCURSEL, Some(WPARAM(index)), None);
@@ -748,9 +779,24 @@ impl SettingsWindow {
                 11 => self.page(1),
                 12 => self.page(2),
                 222 => self.refresh_rvc_controls(),
-                260 | 261 => {
-                    if let Err(error) = super::help::open(action) {
+                260 => {
+                    if let Err(error) = super::help::open_repository() {
                         self.message(&error);
+                    }
+                }
+                id if (450..450 + self.parameters.len()).contains(&id) => {
+                    if let Some(parameter) = self.parameters.get(id - 450) {
+                        if parameter.schema.kind == ParameterKind::File {
+                            let result = super::help::model_folder(
+                                &self.base.plugin_directory.join("rvc-cuda"),
+                                &text(parameter.handle),
+                                parameter.schema.default.as_str().unwrap_or(""),
+                            )
+                            .and_then(|folder| super::help::open_folder(&folder));
+                            if let Err(error) = result {
+                                self.message(&error);
+                            }
+                        }
                     }
                 }
                 240..=242 => {

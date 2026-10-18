@@ -102,7 +102,7 @@ impl SettingsWindow {
         self.control(
             "STATIC",
             label,
-            0x4000 | 0x0080, /* SS_ENDELLIPSIS | SS_NOPREFIX */
+            0x4000 | 0x0080 | 0x0100, /* SS_ENDELLIPSIS | SS_NOPREFIX | SS_NOTIFY */
             0,
             x,
             y,
@@ -164,6 +164,11 @@ impl SettingsWindow {
             260,
             Some(page),
         )?;
+        if editable {
+            unsafe {
+                SendMessageW(h, CB_LIMITTEXT, Some(WPARAM(32767)), None);
+            }
+        }
         for value in values {
             unsafe {
                 SendMessageW(

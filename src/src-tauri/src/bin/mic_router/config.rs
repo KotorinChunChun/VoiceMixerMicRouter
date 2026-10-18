@@ -22,7 +22,7 @@ use std::path::PathBuf;
 pub use storage::write_json;
 pub const NOISE_PARAMETER: &str = "transient_noise_suppression";
 /// 常駐ツール固有の版。本体Cargoパッケージとは独立して更新する。
-pub const APP_VERSION: &str = "1.0.16";
+pub const APP_VERSION: &str = "1.0.17";
 pub const APP_NAME: &str = "VoiceMixerMicRouter";
 pub fn default_output_labels() -> [String; 3] {
     ["配信用", "音声入力用", "モニタ用"].map(String::from)

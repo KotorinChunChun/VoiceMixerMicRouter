@@ -351,10 +351,37 @@ fn settings_controls_roundtrip_and_page_layout() {
         window.read().unwrap().hotkeys[0].handling,
         crate::config::KeyHandling::Override
     );
-    for id in [260, 261] {
-        let link = unsafe { GetDlgItem(Some(window.hwnd), id) }.unwrap();
-        assert!(window.pages[0].contains(&link));
-        assert!(text(link).contains("案内"));
+    let link = unsafe { GetDlgItem(Some(window.hwnd), 260) }.unwrap();
+    assert!(window.pages[0].contains(&link));
+    assert_eq!(text(link), "公開GitHub");
+    assert!(unsafe { GetDlgItem(Some(window.hwnd), 261) }.is_err());
+    let geometry = |h| unsafe {
+        let mut rect = RECT::default();
+        GetWindowRect(h, &mut rect).unwrap();
+        (rect.left, rect.right - rect.left)
+    };
+    assert_eq!(geometry(window.overlay), geometry(window.devices[0].handle));
+    assert_eq!(geometry(window.startup), geometry(window.devices[0].handle));
+    let tips = window.tips.as_ref().unwrap();
+    assert!(tips.targets.contains(&window.noise));
+    assert!(tips.targets.contains(&window.rvc_enabled));
+    for parameter in &window.parameters {
+        assert!(tips.targets.contains(&parameter.handle));
+        if parameter.schema.kind == ParameterKind::File {
+            let original = text(parameter.handle);
+            let path = r"C:\任意のフォルダー\別のモデル.pth";
+            set_text(parameter.handle, path);
+            assert_eq!(
+                window.read().unwrap().rvc_parameters[&parameter.schema.id],
+                path
+            );
+            set_text(parameter.handle, &original);
+        }
+    }
+    for id in [450, 451] {
+        let button = unsafe { GetDlgItem(Some(window.hwnd), id) }.unwrap();
+        assert!(window.pages[2].contains(&button));
+        assert_eq!(text(button), "フォルダーを開く");
     }
     for (i, row) in window.keys.iter().enumerate() {
         set_checked(row[0], true);
@@ -615,4 +642,24 @@ fn settings_controls_roundtrip_and_page_layout() {
     assert_eq!(reread.voice_input_name, initial.voice_input_name);
     assert_eq!(reread.monitor_name, initial.monitor_name);
     assert_eq!(text(reopened.devices[3].handle), "Voice Input（未接続）");
+}
+
+#[test]
+fn rvc_tooltips_cover_every_parameter_and_absolute_paths_roundtrip() {
+    for p in schema().into_iter().filter(|p| p.id != NOISE_PARAMETER) {
+        let help = super::parameters::parameter_help(&p);
+        assert!(!help.is_empty(), "{}", p.id);
+        assert!(help.contains(if p.restart_required {
+            "再起動"
+        } else {
+            "反映"
+        }));
+        if p.kind == ParameterKind::File {
+            let file = r"C:\任意のフォルダー\音声 # model.pth";
+            assert_eq!(
+                parse_parameter(&p, &format!("\"{file}\""), false).unwrap(),
+                file
+            );
+        }
+    }
 }

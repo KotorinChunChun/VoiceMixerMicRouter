@@ -1,4 +1,4 @@
-//! 設定画面の2リンクから、同梱されたローカル案内の該当節を開く。
+//! 公開リポジトリと、RVCファイルの保存フォルダーを開く。
 use super::controls::wide;
 use std::path::{Path, PathBuf};
 use windows::{
@@ -16,7 +16,7 @@ use windows::{
 
 /// comctl32 v6に依存せず、標準Buttonのキー操作・アクセシビリティを保つ。
 pub(super) unsafe fn draw_link(item: &DRAWITEMSTRUCT) -> bool {
-    if !matches!(item.CtlID, 260 | 261) {
+    if !matches!(item.CtlID, 260) {
         return false;
     }
     unsafe {
@@ -50,67 +50,75 @@ pub(super) unsafe fn draw_link(item: &DRAWITEMSTRUCT) -> bool {
     true
 }
 
-fn target(action: usize, executable: &Path) -> Result<String, String> {
-    let section = match action {
-        260 => "install",
-        261 => "settings",
-        _ => return Err("案内が見つかりません".into()),
-    };
-    let folder = executable.parent().ok_or("アプリの配置先がありません")?;
-    let file: PathBuf = folder.join("browser-capture-guide.html");
-    // デバッグ単体実行でも案内を利用できるよう、同じ内容を配置する。
-    if !file.exists() {
-        std::fs::write(
-            &file,
-            include_str!("../../../../../../docs/browser-capture-guide.html"),
-        )
-        .map_err(|e| format!("案内を配置できません: {e}"))?;
-    }
-    let path = file.to_string_lossy().replace('\\', "/");
-    let mut url = String::from("file:///");
-    for b in path.bytes() {
-        if b.is_ascii_alphanumeric() || b"/:.-_~".contains(&b) {
-            url.push(b as char);
-        } else {
-            url.push_str(&format!("%{b:02X}"));
-        }
-    }
-    Ok(format!("{url}#{section}"))
-}
-pub(super) fn open(action: usize) -> Result<(), String> {
-    let executable = std::env::current_exe().map_err(|e| e.to_string())?;
-    let url = target(action, &executable)?;
+pub(super) const REPOSITORY_URL: &str = "https://github.com/KotorinChunChun/VoiceMixerMicRouter";
+
+fn open(target: &str) -> Result<(), String> {
     let result = unsafe {
         ShellExecuteW(
             None,
             PCWSTR(wide("open").as_ptr()),
-            PCWSTR(wide(&url).as_ptr()),
+            PCWSTR(wide(target).as_ptr()),
             None,
             None,
             SW_SHOWNORMAL,
         )
     };
     if result.0 as isize <= 32 {
-        return Err("ブラウザで案内を開けませんでした".into());
+        return Err("指定された場所を開けませんでした".into());
     }
     Ok(())
+}
+pub(super) fn open_repository() -> Result<(), String> {
+    open(REPOSITORY_URL)
+}
+pub(super) fn open_folder(folder: &Path) -> Result<(), String> {
+    open(&folder.to_string_lossy())
+}
+pub(super) fn model_folder(plugin: &Path, value: &str, default: &str) -> Result<PathBuf, String> {
+    let value = value.trim().trim_matches('"');
+    let file = Path::new(if value.is_empty() { default } else { value });
+    let resolved = if file.is_absolute() {
+        file.to_owned()
+    } else {
+        plugin.join(file)
+    };
+    let folder = resolved
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .ok_or("ファイルの保存フォルダーを指定してください")?;
+    if !folder.is_dir() {
+        return Err(format!(
+            "保存フォルダーが見つかりません: {}",
+            folder.display()
+        ));
+    }
+    Ok(folder.to_owned())
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
-    fn local_guides_are_available_with_encoded_paths_and_correct_sections() {
+    fn model_folder_uses_selected_absolute_relative_and_empty_default_without_creating_paths() {
         let dir = tempfile::tempdir().unwrap();
-        let folder = dir.path().join("日本語 # space");
-        std::fs::create_dir(&folder).unwrap();
-        let exe = folder.join("mic.exe");
-        let install = target(260, &exe).unwrap();
-        assert!(install.contains("%23%20space"));
-        assert!(install.ends_with("#install"));
-        assert!(target(261, &exe).unwrap().ends_with("#settings"));
-        let html = std::fs::read_to_string(folder.join("browser-capture-guide.html")).unwrap();
-        assert!(html.contains("id=\"install\"") && html.contains("id=\"settings\""));
-        assert!(html.contains("直接受信しません"));
-        assert!(target(0, &exe).is_err());
+        let plugin = dir.path().join("plugin");
+        let models = plugin.join("models");
+        let external = dir.path().join("任意の場所 # space");
+        std::fs::create_dir_all(&models).unwrap();
+        std::fs::create_dir_all(&external).unwrap();
+        assert_eq!(
+            model_folder(&plugin, "models/model.pth", "models/default.pth").unwrap(),
+            models
+        );
+        assert_eq!(
+            model_folder(&plugin, "", "models/default.index").unwrap(),
+            models
+        );
+        let file = external.join("音声モデル.pth");
+        assert_eq!(
+            model_folder(&plugin, &format!("\"{}\"", file.display()), "").unwrap(),
+            external
+        );
+        assert!(model_folder(&plugin, "missing/model.pth", "").is_err());
+        assert!(!plugin.join("missing").exists());
     }
 }
