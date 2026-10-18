@@ -9,3 +9,10 @@
 5. 完成資料をhistoryへ移し、結果に実測と未確認の範囲を残す。
 
 起動・検証・配備コマンドは[開発者ガイド](../docs/DEVELOPERS_GUIDE.md)を参照する。Install-MicRouter.ps1の-NoStartupを外すと現在ユーザーの既存Startupショートカットを更新する。モデルと個人設定は公開成果物に同梱しない。
+
+
+## インストーラの公開
+
+v1.0.18以降はBuild-Installer.ps1 -RequireCleanで採用コミットを固定してビルドする。モデル・個人設定・PDBを除外し、生成されたsetup・製品別台帳・SHA256と導入／登録資料をReleaseへまとめる。GitHubのdigestをローカルと照合してから公開し、公開URLから再取得してSHA256を照合する。同じ版の公開assetを差し替えない。詳細は[開発者ガイド](../docs/DEVELOPERS_GUIDE.md)。
+
+KotorinToysの本体登録は別工程。公開したことだけで本体の固定製品表を変更したり、登録済みと記録したりしない。今回の公開・隔離インストール許可は将来の恒久許可に置き換えない。
