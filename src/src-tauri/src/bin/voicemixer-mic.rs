@@ -12,6 +12,12 @@ mod engine;
 #[cfg(windows)]
 #[path = "mic_router/hotkeys.rs"]
 mod hotkeys;
+#[cfg(windows)]
+#[path = "mic_router/management.rs"]
+mod management;
+#[cfg(windows)]
+#[path = "mic_router/management_pipe.rs"]
+mod management_pipe;
 #[path = "mic_router/resident.rs"]
 mod resident;
 #[cfg(windows)]

@@ -611,6 +611,10 @@ impl SettingsWindow {
                 let _ = ShowWindow(self.hwnd, SW_RESTORE);
             } else if !IsWindowVisible(self.hwnd).as_bool() {
                 let _ = ShowWindow(self.hwnd, SW_SHOW);
+                // STARTUPINFOのSW_HIDEが最初のShowWindowを上書きする場合も、明示表示を完了する。
+                if !IsWindowVisible(self.hwnd).as_bool() {
+                    let _ = ShowWindow(self.hwnd, SW_SHOW);
+                }
             }
             if GetForegroundWindow() != self.hwnd {
                 let _ = SetForegroundWindow(self.hwnd);

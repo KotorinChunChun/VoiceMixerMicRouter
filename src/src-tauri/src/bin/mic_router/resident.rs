@@ -119,8 +119,9 @@ pub fn run(
     initial: Option<Mode>,
     open_settings: bool,
     silent: bool,
-    _launch_origin: String,
+    launch_origin: String,
 ) -> Result<(), String> {
+    let management = crate::management::Endpoint::start()?;
     let directory = path.parent().unwrap().to_path_buf();
     let mut desired = settings.available_mode(
         initial
@@ -182,6 +183,37 @@ pub fn run(
         .map_err(|e| e.to_string())?;
     let result = (|| -> Result<(), String> {
         loop {
+            for event in management.poll() {
+                let blocked = window.is_some() || pending.is_some();
+                match event {
+                    crate::management::Event::Stop(deadline) => {
+                        if std::time::Instant::now() < deadline && !blocked {
+                            return Ok(());
+                        }
+                    }
+                    crate::management::Event::Request(call) => {
+                        if std::time::Instant::now() >= call.deadline {
+                            continue;
+                        }
+                        let (mut result, mut detail) =
+                            crate::management::validate(&call.request, blocked);
+                        if result == "completed" && call.request.command == "show" {
+                            if let Some(w) = &window {
+                                w.show();
+                            } else {
+                                match settings_ui::SettingsWindow::new(&settings, desired) {
+                                    Ok(w) => window = Some(w),
+                                    Err(_) => {
+                                        result = "failed";
+                                        detail = "設定画面を表示できませんでした。";
+                                    }
+                                }
+                            }
+                        }
+                        call.respond(result, detail, &launch_origin);
+                    }
+                }
+            }
             ui.interaction_locked = window.is_some() || pending.is_some();
             ui.allow_mode_escape = window.is_none() && pending.is_some();
             let queued = if pending.is_none() {
