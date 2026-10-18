@@ -45,4 +45,3 @@ if (-not $NoStartup) {
 if (-not $NoStart) { & (Join-Path $PSScriptRoot 'Start-MicRouter.ps1') -Directory $Directory }
 Write-Host "配備先: $Directory"
 Write-Host "設定: $config"
-

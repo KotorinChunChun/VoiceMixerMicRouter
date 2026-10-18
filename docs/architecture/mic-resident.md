@@ -45,7 +45,7 @@
 | トレイ・オーバーレイ・設定画面 | 通常回帰に加えて下記GUI2件。配置、クリック、フォーカス、期限、部分更新まで確認 |
 | 背景準備、モデル保持、設定適用 | 通常の状態遷移試験に加え、必要な実モデル試験と下記の背景準備シナリオ |
 | SPK入力・デバイス解決 | `live_speaker_input_shares_rvc_and_stops_feedback`。設定適用・復元は `live_settings_keep_plugin_and_rollback_failed_device_and_model` |
-| 遅延、短音抑制 | `virtual_device_delay_covers_queued_audio`、既存の `dev/scripts/verify-rvc-transient.py`。利用者が指定した録音を評価する場合だけ `verify-rvc-transient-recording.py` |
+| 遅延、短音抑制 | `virtual_device_delay_covers_queued_audio`、`plugins/rvc-cuda/tests/test_transient_gate.py`。実録音を評価する場合は利用者が明示した音声だけを別工程で扱う |
 | OS既定デバイスへの追従 | `follows_live_windows_defaults_without_reloading_rvc`。OS設定を一時変更する試験なので、既定変更まで許可された検証でだけ実行 |
 | 文書・スキルのみ | 相対リンク、参照する現行仕様、適用範囲、スキル形式を確認。音声試験を追加しない |
 
@@ -141,4 +141,3 @@ P2T押下中の出力ボタンは青い背景と`P2T`の文字で通常ONと区�
 Hotkey.handlingは既存設定でCoexistを補う。KeyStateは抑止した主キーを解放まで記録する。上書きkeydownはOSのGetAsyncKeyStateへ反映されないため、その主キーを非同期状態だけで解放扱いにしない。修飾キーの解放ではP2Tを解除し、主キーのkeyupは引き続き抑止して対を保つ。MSTSC前景時のフック再登録と、非同期キー状態を使わない判断を維持する。無効なRVC関連キーは有効割当から外す。
 
 旧既定のShift移行はhotkey_defaults_revisionで一度だけ判定する。保存添字は維持し、表示順だけ変更する。列IDも旧Shift=1/Ctrl=2/Windows=3/Alt=4/主キー=5を保ち、ネイティブ部品の作成順をCtrl→Shift→Alt→Windows→主キーへ揃える。共存/上書きは列6。設定画面の幅は960px、文字16pxを維持する。公開GitHubリンクは標準Buttonのowner-drawを使い、下線・指カーソル・フォーカス枠を表示する。RVC各項目と短音抑制は標準Tooltipを使い、文字列とサブクラスの寿命を設定窓に合わせる。comctl32 v6の有効化に依存しないようTTTOOLINFOWはV2サイズで登録する。モデルのフォルダー解決はplugin基準の相対パスと絶対パスを区別し、未保存入力を使う。
-
