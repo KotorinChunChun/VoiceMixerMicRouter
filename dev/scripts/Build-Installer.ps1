@@ -48,6 +48,7 @@ $files=@(Get-ChildItem -LiteralPath $payload -File -Recurse|ForEach-Object{
  [ordered]@{path=$relative.Replace('\','/');length=$_.Length;sha256=(Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
 })
 [ordered]@{sourceCommit=$sourceCommit;files=$files}|ConvertTo-Json -Depth 8|Set-Content (Join-Path $run 'payload-files.json') -Encoding utf8
+& (Join-Path $PSScriptRoot 'test-public-payload-security.ps1') -Payload $payload -ReportDirectory (Join-Path $root ("dev/history/v$version/logs/payload-security-"+[guid]::NewGuid().ToString('N')))
 & (Join-Path $PSScriptRoot 'prepare-inno.ps1')
 if($LASTEXITCODE -ne 0){throw 'Inno準備失敗'}
 $compiler=Join-Path $root 'artifacts/dependencies/inno-7.1.0/ISCC.exe'
