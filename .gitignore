@@ -36,3 +36,15 @@ __pycache__/
 /artifacts/
 /src/maintenance/bin/
 /src/maintenance/obj/
+
+# セキュリティ点検: 秘密保管と生成物の公開混入を防ぐ
+/dev/history/*/logs/
+!.env.example
+secrets.json
+credentials.json
+.npmrc
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
