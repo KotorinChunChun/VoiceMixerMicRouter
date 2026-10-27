@@ -1,6 +1,6 @@
 # インストールとRVCの追加設定
 
-Windows 11 x64向けです。GitHub ReleasesのVoiceMixerMicRouter-1.0.18-setup.exeを実行してください。利用者単位で導入し、管理者権限やWindows再起動を要求しません。未署名の開発版です。SHA256SUMS.txtで配布物の整合性を確認できます。
+Windows 11 x64向けです。GitHub ReleasesのVoiceMixerMicRouter-1.0.19-setup.exeを実行してください。利用者単位で導入し、管理者権限やWindows再起動を要求しません。未署名の開発版です。SHA256SUMS.txtで配布物の整合性を確認できます。
 
 ## 初回起動
 
