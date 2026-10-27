@@ -19,6 +19,9 @@ impl Settings {
         Ok(Self {
             hotkey_defaults_revision: 1,
             rvc_enabled: true,
+            switch_sounds: super::default_switch_sounds(),
+            sound_device_id: "default://console".into(),
+            sound_device_name: "既定のデバイス".into(),
             output_labels: super::default_output_labels(),
             microphone_id: mic.endpoint_id.clone(),
             microphone_name: mic.friendly_name.clone(),

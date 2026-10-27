@@ -61,6 +61,18 @@ struct ResidentSession {
     rvc_error: Option<String>,
     configuration: Option<ConfigurationTransaction>,
     configuration_response: Option<ConfigurationResponse>,
+    sound_guard: Option<SoundGuard>,
+    drain_target: Option<Mode>,
+    drain_started: Option<Instant>,
+}
+
+struct SoundGuard {
+    start: Instant,
+    revision: u64,
+    ready: bool,
+    pending: Vec<(u8, String)>,
+    playing: Vec<std::sync::mpsc::Receiver<Result<(), String>>>,
+    release: Option<Instant>,
 }
 
 struct ConfigurationTransaction {
@@ -198,9 +210,97 @@ impl ResidentSession {
             rvc_error: None,
             configuration: None,
             configuration_response: None,
+            sound_guard: None,
+            drain_target: None,
+            drain_started: None,
         };
         value.set_mode(mode)?;
         Ok(value)
+    }
+    fn rvc_processor(
+        &self,
+    ) -> Result<std::sync::Arc<audio_mixer_backend::plugins::instance::PluginProcessor>, String>
+    {
+        let backend = self.session.backend();
+        let graph = backend.controller.snapshot();
+        let NodeProperties::TransformPlugin { instance_id, .. } = graph.nodes[&self.rvc].properties
+        else {
+            return Err("RVCノードがありません".into());
+        };
+        backend
+            .plugins
+            .get(instance_id)
+            .map_err(|error| error.to_string())
+    }
+    fn request_mode(&mut self, mode: Mode) -> Result<(), String> {
+        let mode = self.settings.available_mode(mode);
+        if self.drain_target.is_some() {
+            if mode == self.mode {
+                self.rvc_processor()?.end_drain();
+                self.drain_target = None;
+                self.drain_started = None;
+                return self.apply_selected_route();
+            }
+            self.drain_target = Some(mode);
+            return Ok(());
+        }
+        if self.mode != mode
+            && self.mode.is_rvc()
+            && self.phase() == "running"
+            && self.session.backend().nodes.is_active(self.rvc)
+        {
+            let source = if self.mode == Mode::SpeakerRvc {
+                self.speaker
+            } else {
+                self.microphone
+            };
+            let frames = self.session.backend().runtime.source_queued_frames(source);
+            if !self.rvc_processor()?.begin_drain(frames) {
+                return Err("RVCの送信待ち位置を取得できません".into());
+            }
+            self.drain_target = Some(mode);
+            self.drain_started = Some(Instant::now());
+            return Ok(());
+        }
+        self.set_mode(mode)
+    }
+    fn advance_drain(&mut self) -> Result<(), String> {
+        let Some(target) = self.drain_target else {
+            return Ok(());
+        };
+        let processor = self.rvc_processor()?;
+        if self
+            .drain_started
+            .is_some_and(|start| start.elapsed() >= Duration::from_secs(30))
+        {
+            processor.end_drain();
+            self.drain_target = None;
+            self.drain_started = None;
+            self.route_request.store(2, Ordering::SeqCst);
+            self.set_mode(Mode::Muted)?;
+            return Err("RVCの残音送信が時間切れになったため送信を停止しました".into());
+        }
+        if processor.drain_unsupported() {
+            processor.end_drain();
+            self.drain_target = None;
+            self.drain_started = None;
+            self.set_mode(target)?;
+            return Err("このRVCプラグインの残音位置は追跡できません".into());
+        }
+        if self.rvc_error.is_some() {
+            processor.end_drain();
+            self.drain_target = None;
+            self.drain_started = None;
+            self.set_mode(target)?;
+            return Err("RVCの障害により、残音の送信完了を確認できませんでした".into());
+        }
+        if processor.drain_finished() {
+            processor.end_drain();
+            self.drain_target = None;
+            self.drain_started = None;
+            self.set_mode(target)?;
+        }
+        Ok(())
     }
     fn set_mode(&mut self, mode: Mode) -> Result<(), String> {
         let mode = self.settings.available_mode(mode);
@@ -344,6 +444,7 @@ impl ResidentSession {
         let backend = self.session.backend();
         // 完了通知の直前に届き、まだコマンド列から取り出していないMIC/停止も優先する。
         let mode = match self.route_request.load(Ordering::SeqCst) {
+            _ if self.drain_target.is_some() => self.mode,
             1 => Mode::Direct,
             2 => Mode::Muted,
             _ if self.mode.is_rvc()
@@ -357,16 +458,109 @@ impl ResidentSession {
         };
         let mut graph = backend.controller.snapshot();
         select_graph(&mut graph, mode)?;
+        if self
+            .sound_guard
+            .as_ref()
+            .is_some_and(|guard| guard.revision != u64::MAX)
+            && mode == Mode::SpeakerRvc
+        {
+            let source = graph
+                .nodes
+                .values_mut()
+                .find(|n| n.display_name == crate::config::SOURCE_SELECTOR)
+                .ok_or("RVC入力切替ノードがありません")?;
+            if let NodeProperties::InputSelector { mute, .. } = &mut source.properties {
+                *mute = true;
+            }
+        }
         backend
             .controller
             .replace_graph(graph)
             .map_err(|e| e.to_string())
     }
+    fn request_sound(&mut self, sound: u8, device: String) -> Result<(), String> {
+        if sound == 0 {
+            return Ok(());
+        }
+        let direction = audio_mixer_backend::windows::devices::DeviceDirection::Render;
+        let resolve =
+            |id: &str| audio_mixer_backend::windows::devices::resolve_endpoint_id(id, direction);
+        // 再生中にOS既定が変わっても、比較したのと同じ実デバイスへ再生する。
+        let Ok(device) = resolve(&device) else {
+            return Ok(());
+        };
+        if let Some(guard) = &mut self.sound_guard {
+            guard.pending.push((sound, device));
+            guard.release = None;
+            return Ok(());
+        }
+        let same = resolve(&self.settings.speaker_id).map_or(true, |input| input == device);
+        if (self.mode == Mode::SpeakerRvc || self.drain_target == Some(Mode::SpeakerRvc)) && same {
+            self.sound_guard = Some(SoundGuard {
+                start: Instant::now() + Duration::from_millis(50),
+                revision: u64::MAX,
+                ready: false,
+                pending: vec![(sound, device)],
+                playing: Vec::new(),
+                release: None,
+            });
+            // 旧SPK入力の取り込み済み分を先にRVCへ渡してから無音保護を開始する。
+            if self.drain_target.is_none() || self.mode != Mode::SpeakerRvc {
+                self.sound_guard.as_mut().unwrap().revision = 0;
+                self.apply_selected_route()?;
+                self.sound_guard.as_mut().unwrap().revision =
+                    self.session.backend().controller.snapshot().revision;
+            }
+        } else {
+            let _ = crate::sounds::play(sound, device);
+        }
+        Ok(())
+    }
+    fn advance_sound(&mut self) -> Result<(), String> {
+        let unarmed = self
+            .sound_guard
+            .as_ref()
+            .is_some_and(|guard| guard.revision == u64::MAX);
+        if unarmed && (self.drain_target.is_none() || self.rvc_processor()?.drain_cutoff_set()) {
+            self.sound_guard.as_mut().unwrap().revision = 0;
+            self.apply_selected_route()?;
+            self.sound_guard.as_mut().unwrap().revision =
+                self.session.backend().controller.snapshot().revision;
+        }
+        let Some(guard) = &mut self.sound_guard else {
+            return Ok(());
+        };
+        let now = Instant::now();
+        if guard.revision != u64::MAX && !guard.ready && now >= guard.start + Duration::from_secs(3)
+        {
+            self.sound_guard = None;
+            self.apply_selected_route()?;
+            return Err("効果音の入力保護を確認できませんでした".into());
+        }
+        if now >= guard.start && guard.ready {
+            for (sound, device) in guard.pending.drain(..) {
+                guard.playing.push(crate::sounds::play(sound, device));
+            }
+        }
+        guard
+            .playing
+            .retain(|rx| matches!(rx.try_recv(), Err(std::sync::mpsc::TryRecvError::Empty)));
+        if guard.playing.is_empty() && guard.pending.is_empty() && guard.release.is_none() {
+            guard.release = Some(now + Duration::from_millis(250));
+        }
+        if guard.release.is_some_and(|release| now >= release) {
+            self.sound_guard = None;
+            self.apply_selected_route()?;
+        }
+        Ok(())
+    }
     fn loading(&self) -> bool {
         self.mode.is_rvc() && self.preparation.pending()
     }
     fn phase(&self) -> &'static str {
-        if self.loading() {
+        if self.drain_target.is_some() {
+            "draining"
+        } else if self.loading() {
             "starting"
         } else if self.mode.is_rvc() && self.rvc_error.is_some() {
             "error"
@@ -446,9 +640,16 @@ impl ResidentSession {
     }
     fn tick_audio(&mut self) -> Result<(), String> {
         let mut rvc_error = None;
+        let mut graph_revision = None;
         let rvc = self.rvc;
         let result = self.session.tick_with_runtime_event_policy(|event| {
             self.meters.observe(event);
+            if let audio_mixer_backend::audio::engine::RuntimeEvent::GraphRevisionApplied {
+                revision,
+            } = event
+            {
+                graph_revision = Some(graph_revision.unwrap_or(0u64).max(*revision));
+            }
             if let audio_mixer_backend::audio::engine::RuntimeEvent::NodeState {
                 node_id,
                 state: RuntimeState::Error,
@@ -466,6 +667,11 @@ impl ResidentSession {
             }
             false
         });
+        if let Some(guard) = &mut self.sound_guard {
+            if graph_revision.is_some_and(|revision| revision >= guard.revision) {
+                guard.ready = true;
+            }
+        }
         // 準備中・解放後・復旧待ちに残った旧instanceの通知は消化だけする。
         // 完了を有効化する前に必ずtickするため、新instanceを旧通知で壊さない。
         if !self.preparation.pending() && self.rvc_wanted && self.rvc_error.is_none() {
@@ -476,6 +682,9 @@ impl ResidentSession {
         result.map_err(|e| e.to_string())
     }
     fn status_message(&self) -> String {
+        if let Some(target) = self.drain_target {
+            return format!("{}の残音送信中 → {}", self.mode.label(), target.label());
+        }
         if self.phase() == "error" {
             self.rvc_error.clone().unwrap_or_default()
         } else {

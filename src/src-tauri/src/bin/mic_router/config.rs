@@ -24,6 +24,9 @@ pub const NOISE_PARAMETER: &str = "transient_noise_suppression";
 /// 常駐ツール固有の版。本体Cargoパッケージとは独立して更新する。
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const APP_NAME: &str = "VoiceMixerMicRouter";
+pub fn default_switch_sounds() -> [u8; 7] {
+    [1, 2, 3, 4, 5, 6, 7]
+}
 pub fn default_output_labels() -> [String; 3] {
     ["配信用", "音声入力用", "モニタ用"].map(String::from)
 }
@@ -96,6 +99,13 @@ pub struct Settings {
     pub hotkey_defaults_revision: u8,
     #[serde(default = "enabled_default")]
     pub rvc_enabled: bool,
+    /// 入力4モードと出力3系統それぞれの効果音。0はなし。
+    #[serde(default = "default_switch_sounds")]
+    pub switch_sounds: [u8; 7],
+    #[serde(default = "default_speaker_id")]
+    pub sound_device_id: String,
+    #[serde(default = "default_speaker_name")]
+    pub sound_device_name: String,
     /// 表示専用の用途名。デバイス名や音声ノードの識別には使わない。
     #[serde(default = "default_output_labels")]
     pub output_labels: [String; 3],
@@ -182,6 +192,9 @@ impl Settings {
         self.rvc_parameters[NOISE_PARAMETER] = json!(enabled);
     }
     pub fn validate(&self) -> Result<(), String> {
+        if self.switch_sounds.iter().any(|sound| *sound > 7) {
+            return Err("効果音の選択が不正です".into());
+        }
         if self.microphone_id.is_empty()
             || self.speaker_id.is_empty()
             || self.cable_id.is_empty()

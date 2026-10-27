@@ -57,12 +57,12 @@ try{
  Check ((Setup 'fresh') -eq 0) 'サイレント新規インストール'
  Check (Test-Path $reg) 'HKCUの正式導入登録'
  $info=[Diagnostics.FileVersionInfo]::GetVersionInfo($exe)
- Check ($info.ProductName -eq 'VoiceMixerMicRouter' -and $info.FileVersion -eq '1.0.18') '導入EXEの製品名・版'
+ Check ($info.ProductName -eq 'VoiceMixerMicRouter' -and $info.FileVersion -eq '1.0.19') '導入EXEの製品名・版'
  Check ((Get-Content "$app/tool.json" -Raw|ConvertFrom-Json).appId -eq 'KotorinToys.VoiceMixerMicRouter') 'tool.jsonの製品識別'
  Check (-not(Test-Path "$app/plugins/rvc-cuda/runtime") -and -not(Test-Path "$app/plugins/rvc-cuda/models/KahoA.pth")) 'モデルとPython/CUDAを含まない基本配布'
  $running=Start-Process -FilePath $exe -ArgumentList @('--startup','--launch-origin','host_manual') -WindowStyle Hidden -PassThru
  $reply=Ready
- Check ($reply.pid -eq $running.Id -and $reply.version -eq '1.0.18') '導入EXEと管理応答のPID・版一致'
+ Check ($reply.pid -eq $running.Id -and $reply.version -eq '1.0.19') '導入EXEと管理応答のPID・版一致'
  $state=WaitRunning
  Check ($state.status.mode -eq 'muted') 'モデル未配置の初回も正常な送信停止で稼働'
  Check (Test-Path $config) '隔離利用者データ領域の初回設定生成'

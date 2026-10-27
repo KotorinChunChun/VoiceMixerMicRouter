@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     sync::{
-        atomic::{AtomicBool, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
         Arc,
     },
 };
@@ -101,6 +101,17 @@ pub trait TransformInstance: Send {
     fn queued_frames(&self) -> u32 {
         0
     }
+    /// 入力を無音に置き換え、要求前のサンプルが出力まで到達するのを待つ。
+    fn begin_drain(&mut self, _preserve_frames: usize) -> bool {
+        false
+    }
+    fn drain_cutoff_set(&self) -> bool {
+        false
+    }
+    fn drain_finished(&self) -> bool {
+        false
+    }
+    fn end_drain(&mut self) {}
     fn latest_stats(&self) -> Option<PluginStats> {
         None
     }
@@ -118,6 +129,9 @@ pub struct PluginProcessor {
     last_error: Mutex<Option<String>>,
     latest_stats: Mutex<Option<PluginStats>>,
     manifest_latency_frames: u32,
+    drain_state: AtomicU8,
+    drain_frames: AtomicU64,
+    drain_cutoff: AtomicBool,
 }
 
 impl PluginProcessor {
@@ -145,6 +159,9 @@ impl PluginProcessor {
             last_error: Mutex::new(None),
             latest_stats: Mutex::new(None),
             manifest_latency_frames: manifest_latency_frames.min(u32::MAX as usize) as u32,
+            drain_state: AtomicU8::new(0),
+            drain_frames: AtomicU64::new(0),
+            drain_cutoff: AtomicBool::new(false),
         })
     }
 
@@ -292,6 +309,61 @@ impl PluginProcessor {
         Ok(())
     }
 
+    /// Control requests are consumed only by the audio thread while it already
+    /// holds the instance lock. The control thread never blocks a realtime block.
+    pub fn begin_drain(&self, preserve_frames: usize) -> bool {
+        self.drain_frames
+            .store(preserve_frames as u64, Ordering::Relaxed);
+        self.drain_cutoff.store(false, Ordering::Release);
+        self.drain_state.store(1, Ordering::Release);
+        true
+    }
+    pub fn drain_cutoff_set(&self) -> bool {
+        self.drain_cutoff.load(Ordering::Acquire)
+    }
+    pub fn drain_finished(&self) -> bool {
+        self.drain_state.load(Ordering::Acquire) == 3
+    }
+    pub fn drain_unsupported(&self) -> bool {
+        self.drain_state.load(Ordering::Acquire) == 4
+    }
+    pub fn end_drain(&self) {
+        self.drain_state.store(5, Ordering::Release);
+    }
+    fn drain_before_process(&self, instance: &mut dyn TransformInstance) {
+        match self.drain_state.load(Ordering::Acquire) {
+            1 => {
+                let frames = self
+                    .drain_frames
+                    .load(Ordering::Relaxed)
+                    .min(usize::MAX as u64) as usize;
+                let next = if instance.begin_drain(frames) { 2 } else { 4 };
+                let _ =
+                    self.drain_state
+                        .compare_exchange(1, next, Ordering::AcqRel, Ordering::Acquire);
+            }
+            5 => {
+                instance.end_drain();
+                self.drain_cutoff.store(false, Ordering::Release);
+                let _ =
+                    self.drain_state
+                        .compare_exchange(5, 0, Ordering::AcqRel, Ordering::Acquire);
+            }
+            _ => {}
+        }
+    }
+    fn drain_after_process(&self, instance: &dyn TransformInstance) {
+        if self.drain_state.load(Ordering::Acquire) == 2 {
+            self.drain_cutoff
+                .store(instance.drain_cutoff_set(), Ordering::Release);
+            if instance.drain_finished() {
+                let _ =
+                    self.drain_state
+                        .compare_exchange(2, 3, Ordering::AcqRel, Ordering::Acquire);
+            }
+        }
+    }
+
     pub fn cached_stats(&self) -> Option<PluginStats> {
         self.latest_stats.lock().clone()
     }
@@ -387,7 +459,10 @@ impl AudioProcessor for PluginProcessor {
             }
             return Ok(());
         };
-        match instance.process(block) {
+        self.drain_before_process(instance.as_mut());
+        let processed = instance.process(block);
+        self.drain_after_process(instance.as_ref());
+        match processed {
             Ok(()) => {
                 if let Some(stats) = instance.latest_stats() {
                     if let Some(mut slot) = self.latest_stats.try_lock() {
@@ -455,7 +530,10 @@ impl AudioProcessor for PluginProcessor {
             }
             return Ok(());
         };
-        instance.process_ports(inputs, outputs)
+        self.drain_before_process(instance.as_mut());
+        let processed = instance.process_ports(inputs, outputs);
+        self.drain_after_process(instance.as_ref());
+        processed
     }
 
     fn queued_frames(&self) -> u32 {

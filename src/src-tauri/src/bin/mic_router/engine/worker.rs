@@ -46,6 +46,15 @@ pub fn spawn(
                 }
                 let mut applied = None;
                 let result = match command {
+                    Command::Sound(sound, device) => {
+                        desired.get_or_insert((Mode::Direct, 0));
+                        if let Some(s) = session.as_mut() {
+                            s.request_sound(sound, device)
+                        } else {
+                            let _ = crate::sounds::play(sound, device);
+                            Ok(())
+                        }
+                    }
                     Command::Hold(holds) => {
                         output_holds = holds;
                         desired.get_or_insert((Mode::Direct, 0));
@@ -61,20 +70,24 @@ pub fn spawn(
                         desired = Some((mode, generation));
                         failed = false;
                         retry = Instant::now();
-                        let _ = events.send(Status::new(
-                            mode,
-                            generation,
-                            "starting",
-                            format!("{}へ切替中", mode.label()),
-                        ));
-                        session.as_mut().map_or(Ok(()), |s| s.set_mode(mode))
+                        if session.is_none() {
+                            let _ = events.send(Status::new(
+                                mode,
+                                generation,
+                                "starting",
+                                format!("{}へ切替中", mode.label()),
+                            ));
+                        }
+                        session.as_mut().map_or(Ok(()), |s| s.request_mode(mode))
                     }
                     Command::Configure(next, generation) => {
                         let mode = next.available_mode(desired.map_or(Mode::Direct, |d| d.0));
                         desired = Some((mode, generation));
                         let mut deferred = false;
                         let result = if let Some(s) = session.as_mut() {
-                            if next.rvc_enabled
+                            if s.drain_target.is_some() {
+                                Err("残音の送信完了後に設定を適用してください".into())
+                            } else if next.rvc_enabled
                                 && s.preparation.pending()
                                 && next.rvc_parameters != s.settings.rvc_parameters
                             {
@@ -188,7 +201,9 @@ pub fn spawn(
                 } else {
                     Ok(())
                 }
-                .and_then(|_| active.tick_audio());
+                .and_then(|_| active.tick_audio())
+                .and_then(|_| active.advance_sound())
+                .and_then(|_| active.advance_drain());
                 let prepared = active.poll_rvc_prepare().and_then(|completed| {
                     active.retry_rvc()?;
                     Ok(completed)

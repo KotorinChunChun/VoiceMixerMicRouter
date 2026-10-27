@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "voice-mixer-mic-router",
   "name": "VoiceMixerMicRouter",
-  "version": "1.0.18",
+  "version": "1.0.19",
   "summary": "MIC・RVC・スピーカー入力を切り替え、3つの音声出力へ送る",
   "category": "音声",
   "executable": "src/src-tauri/target/debug/voicemixer-mic.exe",

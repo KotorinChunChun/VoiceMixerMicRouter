@@ -123,6 +123,8 @@ impl SettingsWindow {
                 keys: vec![[HWND::default(); 7]; HOTKEY_COUNT],
                 devices: Vec::new(),
                 parameters: Vec::new(),
+                sounds: [HWND::default(); 7],
+                sound_device: None,
                 overlay: HWND::default(),
                 outputs: [HWND::default(); 3],
                 output_labels: [HWND::default(); 3],
@@ -165,7 +167,10 @@ impl SettingsWindow {
                 None,
             )?;
             SendMessageW(s.tab, TCM_SETITEMSIZE, None, Some(LPARAM((32 << 16) | 145)));
-            for (index, title) in ["基本設定", "キー設定", "RVC設定"].iter().enumerate() {
+            for (index, title) in ["基本設定", "キー設定", "RVC設定", "効果音"]
+                .iter()
+                .enumerate()
+            {
                 let mut label = wide(title);
                 let item = TCITEMW {
                     mask: TCIF_TEXT,
@@ -186,6 +191,7 @@ impl SettingsWindow {
             s.build_basic_page(settings, inputs, outputs)?;
             s.build_keys_page(settings)?;
             s.build_rvc_page(settings, schema)?;
+            s.build_sounds_page(settings, outputs)?;
             s.refresh_rvc_controls();
             s.message = s.control("STATIC", "", 0, 400, 20, 624, CLIENT_WIDTH - 45, 22, None)?;
             s.save = s.control(
@@ -217,6 +223,62 @@ impl SettingsWindow {
             Ok(s)
         }
     }
+    fn build_sounds_page(
+        &mut self,
+        settings: &Settings,
+        outputs: &[AudioDeviceInfo],
+    ) -> Result<(), String> {
+        let labels = [
+            "MICへ切替",
+            "MIC-RVCへ切替",
+            "SPK-RVCへ切替",
+            "送信停止へ切替",
+            "出力1切替",
+            "出力2切替",
+            "出力3切替",
+        ];
+        self.label("効果音の再生デバイス", 20, 80, 170, 28, 3)?;
+        let devices = device_choices(
+            outputs,
+            &settings.sound_device_id,
+            &settings.sound_device_name,
+        );
+        let names: Vec<String> = devices.iter().map(|(_, name)| name.clone()).collect();
+        let index = devices
+            .iter()
+            .position(|(id, _)| *id == settings.sound_device_id)
+            .unwrap_or(0);
+        let handle = self.combo(
+            &names,
+            names.get(index).map_or("", String::as_str),
+            false,
+            190,
+            80,
+            545,
+            510,
+            3,
+        )?;
+        select(handle, index);
+        self.sound_device = Some(DeviceControl { handle, devices });
+        let choices: Vec<String> = crate::sounds::LABELS.iter().map(|s| (*s).into()).collect();
+        for (i, label) in labels.iter().enumerate() {
+            let y = 132 + i as i32 * 50;
+            self.label(label, 20, y, 170, 28, 3)?;
+            let selected = usize::from(settings.switch_sounds[i]);
+            self.sounds[i] = self.combo(
+                &choices,
+                choices.get(selected).map_or("なし", String::as_str),
+                false,
+                190,
+                y,
+                250,
+                500 + i,
+                3,
+            )?;
+        }
+        Ok(())
+    }
+
     fn build_basic_page(
         &mut self,
         settings: &Settings,
@@ -718,6 +780,19 @@ impl SettingsWindow {
     pub(super) fn read(&self) -> Result<Settings, String> {
         let mut settings = self.base.clone();
         settings.rvc_enabled = checked(self.rvc_enabled);
+        let device = self
+            .sound_device
+            .as_ref()
+            .ok_or("効果音の再生デバイスがありません")?;
+        (settings.sound_device_id, settings.sound_device_name) = device
+            .devices
+            .get(selection(device.handle))
+            .cloned()
+            .ok_or("効果音の再生デバイスを選択してください")?;
+        for (i, handle) in self.sounds.iter().enumerate() {
+            settings.switch_sounds[i] =
+                u8::try_from(selection(*handle)).map_err(|_| "効果音を選択してください")?;
+        }
         for (i, row) in self.keys.iter().enumerate() {
             let key = text(row[5]);
             settings.hotkeys[i] = Hotkey {
@@ -794,6 +869,15 @@ impl SettingsWindow {
                 10 => self.page(0),
                 11 => self.page(1),
                 12 => self.page(2),
+                13 => self.page(3),
+                id @ 500..=506 => {
+                    let device = self.sound_device.as_ref()?;
+                    let endpoint = device.devices.get(selection(device.handle))?.0.clone();
+                    return Some(Action::Preview(
+                        selection(self.sounds[id - 500]) as u8,
+                        endpoint,
+                    ));
+                }
                 222 => self.refresh_rvc_controls(),
                 260 => {
                     if let Err(error) = super::help::open_repository() {

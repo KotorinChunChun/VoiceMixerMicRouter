@@ -111,6 +111,9 @@ fn isolated_session(directory: &Path) -> ResidentSession {
         rvc_error: None,
         configuration: None,
         configuration_response: None,
+        sound_guard: None,
+        drain_target: None,
+        drain_started: None,
     }
 }
 
@@ -1415,5 +1418,206 @@ fn live_settings_keep_plugin_and_rollback_failed_device_and_model() {
     active.release_rvc().unwrap();
     wait_for_rvc(&mut active);
     assert!(!active.session.backend().nodes.is_active(active.rvc));
+    active.session.stop().unwrap();
+}
+
+#[test]
+fn active_rvc_drains_before_latest_mode_and_preparation_still_escapes_immediately() {
+    use audio_mixer_backend::{
+        audio::format::AudioBlock,
+        plugins::instance::{PluginPrepareContext, TransformInstance},
+    };
+    use std::sync::atomic::{AtomicBool, Ordering};
+    struct Draining {
+        done: Arc<AtomicBool>,
+        started: Arc<AtomicBool>,
+    }
+    impl TransformInstance for Draining {
+        fn prepare(&mut self, _: PluginPrepareContext) -> audio_mixer_backend::Result<()> {
+            Ok(())
+        }
+        fn process(&mut self, _: &mut AudioBlock) -> audio_mixer_backend::Result<()> {
+            Ok(())
+        }
+        fn set_parameter(
+            &mut self,
+            _: &str,
+            _: serde_json::Value,
+        ) -> audio_mixer_backend::Result<()> {
+            Ok(())
+        }
+        fn begin_drain(&mut self, _: usize) -> bool {
+            self.started.store(true, Ordering::SeqCst);
+            true
+        }
+        fn drain_finished(&self) -> bool {
+            self.done.load(Ordering::SeqCst)
+        }
+    }
+    let directory = tempfile::tempdir().unwrap();
+    let mut active = isolated_session(directory.path());
+    let release = gated_preparation(&mut active, false);
+    active.set_mode(Mode::Rvc).unwrap();
+    // 読込中には古い変換音がないため、MICへ待たずに戻れる。
+    active.request_mode(Mode::Direct).unwrap();
+    assert_eq!(active.mode, Mode::Direct);
+    active.set_mode(Mode::Rvc).unwrap();
+    release.send(()).unwrap();
+    wait_for_rvc(&mut active);
+    let done = Arc::new(AtomicBool::new(false));
+    let started = Arc::new(AtomicBool::new(false));
+    let processor = active.rvc_processor().unwrap();
+    processor
+        .replace_instance(
+            Box::new(Draining {
+                done: done.clone(),
+                started: started.clone(),
+            }),
+            Default::default(),
+            PluginPrepareContext {
+                sample_rate: 48000,
+                channels: 2,
+                graph_block_frames: 480,
+            },
+        )
+        .unwrap();
+    active.route_request.store(1, Ordering::SeqCst);
+    active.request_mode(Mode::Direct).unwrap();
+    let mut input = [AudioBlock::silence(480)];
+    let mut output = [AudioBlock::silence(480)];
+    use audio_mixer_backend::audio::engine::AudioProcessor;
+    processor.process_ports(&mut input, &mut output).unwrap();
+    assert!(started.load(Ordering::SeqCst));
+    assert_eq!(active.mode, Mode::Rvc);
+    active.apply_selected_route().unwrap();
+    assert_selected(&active, Mode::Rvc);
+    active.advance_drain().unwrap();
+    assert_eq!(active.mode, Mode::Rvc);
+    // 待機中に再指定された最後のモードを適用する。
+    active.route_request.store(2, Ordering::SeqCst);
+    active.request_mode(Mode::Muted).unwrap();
+    done.store(true, Ordering::SeqCst);
+    processor.process_ports(&mut input, &mut output).unwrap();
+    active.advance_drain().unwrap();
+    assert_eq!(active.mode, Mode::Muted);
+    assert!(active.drain_target.is_none());
+    assert_selected(&active, Mode::Muted);
+    // プラグインが応答を失っても待機し続けず、安全側の停止とエラーにする。
+    active.route_request.store(0, Ordering::SeqCst);
+    active.set_mode(Mode::Rvc).unwrap();
+    active.route_request.store(1, Ordering::SeqCst);
+    active.request_mode(Mode::Direct).unwrap();
+    active.drain_started = Some(Instant::now() - Duration::from_secs(31));
+    assert!(active.advance_drain().unwrap_err().contains("時間切れ"));
+    assert_eq!(active.mode, Mode::Muted);
+    assert_eq!(active.route_request.load(Ordering::SeqCst), 2);
+    active.unload_rvc().unwrap();
+    wait_for_rvc(&mut active);
+}
+
+#[test]
+#[ignore = "RVCモデルと実マイクを使用。出力はすべてOFF。VOICEMIXER_MIC_TEST_CONFIGが必要"]
+fn real_rvc_drains_before_switching_without_audio_outputs() {
+    let path = std::env::var("VOICEMIXER_MIC_TEST_CONFIG").unwrap();
+    let mut settings = Settings::load(Path::new(&path)).unwrap();
+    settings.rvc_enabled = true;
+    settings.cable_enabled = false;
+    settings.voice_input_enabled = false;
+    settings.monitoring = false;
+    let dir = tempfile::tempdir().unwrap();
+    let mut active = ResidentSession::new(&settings, dir.path(), Mode::Rvc).unwrap();
+    wait_for_rvc(&mut active);
+    assert_eq!(
+        active.phase(),
+        "running",
+        "RVCが利用できません: {:?}",
+        active.rvc_error
+    );
+    assert!(active.session.backend().nodes.is_active(active.rvc));
+    for _ in 0..50 {
+        active.tick_audio().unwrap();
+        thread::sleep(Duration::from_millis(20));
+    }
+    active.route_request.store(1, Ordering::SeqCst);
+    active.request_mode(Mode::Direct).unwrap();
+    assert_eq!(active.mode, Mode::Rvc);
+    assert_eq!(active.drain_target, Some(Mode::Direct));
+    let started = Instant::now();
+    while active.drain_target.is_some() {
+        assert!(
+            started.elapsed() < Duration::from_secs(20),
+            "RVCの残音送出が完了しません"
+        );
+        active.tick_audio().unwrap();
+        active.advance_drain().unwrap();
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(active.mode, Mode::Direct);
+    println!(
+        "RVC残音送出と切替の時間: {:.0} ms",
+        started.elapsed().as_secs_f64() * 1000.0
+    );
+    active.release_rvc().unwrap();
+    wait_for_rvc(&mut active);
+    active.session.stop().unwrap();
+}
+
+#[test]
+#[ignore = "既定スピーカーとRVCを使用し短い試験音を再生。全出力OFF、VOICEMIXER_MIC_TEST_CONFIGが必要"]
+fn real_speaker_rvc_suppresses_effect_input_until_playback_finishes() {
+    let path = std::env::var("VOICEMIXER_MIC_TEST_CONFIG").unwrap();
+    let mut settings = Settings::load(Path::new(&path)).unwrap();
+    settings.rvc_enabled = true;
+    settings.cable_enabled = false;
+    settings.voice_input_enabled = false;
+    settings.monitoring = false;
+    settings.speaker_id = "default://console".into();
+    let dir = tempfile::tempdir().unwrap();
+    let mut active = ResidentSession::new(&settings, dir.path(), Mode::SpeakerRvc).unwrap();
+    wait_for_rvc(&mut active);
+    assert_eq!(
+        active.phase(),
+        "running",
+        "RVCが利用できません: {:?}",
+        active.rvc_error
+    );
+    let muted = |active: &ResidentSession| {
+        let graph = active.session.backend().controller.snapshot();
+        let node = graph
+            .nodes
+            .values()
+            .find(|n| n.display_name == crate::config::SOURCE_SELECTOR)
+            .unwrap();
+        matches!(
+            &node.properties,
+            NodeProperties::InputSelector { mute: true, .. }
+        )
+    };
+    active.request_sound(1, "default://console".into()).unwrap();
+    assert!(
+        muted(&active),
+        "効果音の再生前にSPK入力が保護されていません"
+    );
+    let start = Instant::now();
+    let mut was_ready = false;
+    let mut saw_playing = false;
+    while active.sound_guard.is_some() {
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "効果音の保護が解除されません"
+        );
+        active.tick_audio().unwrap();
+        active.advance_sound().unwrap();
+        if let Some(guard) = &active.sound_guard {
+            was_ready |= guard.ready;
+            saw_playing |= !guard.playing.is_empty();
+            assert!(muted(&active), "効果音の保護中にSPK入力が開きました");
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    assert!(was_ready && saw_playing);
+    assert!(!muted(&active), "効果音終了後にSPK入力が復帰しませんでした");
+    active.release_rvc().unwrap();
+    wait_for_rvc(&mut active);
     active.session.stop().unwrap();
 }

@@ -23,6 +23,9 @@ mod resident;
 #[cfg(windows)]
 #[path = "mic_router/settings_ui.rs"]
 mod settings_ui;
+#[cfg(windows)]
+#[path = "mic_router/sounds.rs"]
+mod sounds;
 #[path = "mic_router/startup.rs"]
 mod startup;
 #[path = "mic_router/telemetry.rs"]

@@ -239,6 +239,7 @@ pub(super) fn input_status(active: bool, phase: &str) -> &'static str {
         match phase {
             "running" => "",
             "error" => "エラー",
+            "draining" => "送信待ち",
             "stopping" => "無効",
             _ => "ロード中",
         }

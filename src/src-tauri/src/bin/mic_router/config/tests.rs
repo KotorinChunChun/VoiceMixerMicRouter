@@ -8,6 +8,9 @@ fn settings() -> Settings {
     Settings {
         hotkey_defaults_revision: 1,
         rvc_enabled: true,
+        switch_sounds: default_switch_sounds(),
+        sound_device_id: "default://console".into(),
+        sound_device_name: "既定のデバイス".into(),
         output_labels: default_output_labels(),
         microphone_id: "mic".into(),
         microphone_name: "Mic".into(),
@@ -866,4 +869,26 @@ fn ptt_masks_all_normal_outputs_and_restores_every_saved_combination() {
             before
         );
     }
+}
+
+#[test]
+fn old_settings_gain_distinct_sounds_and_default_device_without_overwriting_choices() {
+    let mut old = serde_json::to_value(settings()).unwrap();
+    for key in ["switch_sounds", "sound_device_id", "sound_device_name"] {
+        old.as_object_mut().unwrap().remove(key);
+    }
+    let mut loaded: Settings = serde_json::from_value(old).unwrap();
+    assert_eq!(loaded.switch_sounds, [1, 2, 3, 4, 5, 6, 7]);
+    assert_eq!(loaded.sound_device_id, "default://console");
+    loaded.switch_sounds = [0, 4, 4, 4, 3, 0, 1];
+    loaded.sound_device_id = "my-speaker".into();
+    loaded.sound_device_name = "Speaker".into();
+    assert_eq!(
+        serde_json::from_value::<Settings>(serde_json::to_value(&loaded).unwrap())
+            .unwrap()
+            .switch_sounds,
+        [0, 4, 4, 4, 3, 0, 1]
+    );
+    loaded.switch_sounds[0] = 8;
+    assert!(loaded.validate().is_err());
 }

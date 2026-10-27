@@ -1,7 +1,7 @@
 param([switch]$DownloadOnly, [ValidatePattern('^v\d+\.\d+\.\d+$')][string]$RecordVersion)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path (Split-Path $PSScriptRoot)
-if (-not $RecordVersion) { $RecordVersion = 'v1.0.18' }
+if (-not $RecordVersion) { $RecordVersion = 'v1.0.19' }
 $version = '7.1.0'
 $expectedHash = '0362A383ED217D4C4239B5933866DD96D3EB2102737DA92F80F6057A4B40DF2F'
 $downloadDirectory = Join-Path $projectRoot 'artifacts/dependencies/downloads'
