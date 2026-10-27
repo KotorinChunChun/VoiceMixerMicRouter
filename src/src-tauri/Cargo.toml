@@ -1,6 +1,6 @@
 [package]
 name = "voicemixer-mic-router"
-version = "1.0.19"
+version = "1.0.20"
 edition = "2021"
 rust-version = "1.85"
 autobins = false
