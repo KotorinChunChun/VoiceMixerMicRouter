@@ -4,7 +4,10 @@ use super::controls::{checked, select, selection, set_checked, set_text, text};
 use super::parameters::parse_parameter;
 use super::*;
 use audio_mixer_backend::plugins::manifest::ParameterKind;
-use windows::Win32::{Foundation::RECT, Graphics::Gdi::ClientToScreen};
+use windows::Win32::{
+    Foundation::{RECT, SIZE},
+    Graphics::Gdi::{ClientToScreen, GetDC, GetTextExtentPoint32W, ReleaseDC, SelectObject},
+};
 fn schema() -> Vec<ParameterDescriptor> {
     let package: audio_mixer_backend::plugins::package::PluginPackageManifest =
         serde_json::from_str(include_str!(
@@ -328,13 +331,13 @@ fn settings_controls_roundtrip_and_page_layout() {
     assert!(window.poll().is_none());
     assert!(row.iter().all(|h| enabled(*h)));
     select(row[5], 45); // F19
-    set_checked(row[1], true);
+    select(row[1], 3);
     set_checked(row[0], false);
     ACTIONS.lock().unwrap().push(HOTKEY_BASE + 20);
     window.poll();
     assert!(row[1..].iter().all(|h| !enabled(*h)));
     assert_eq!(text(row[5]), "F19");
-    assert!(checked(row[1]));
+    assert_eq!(selection(row[1]), 3);
     set_checked(row[0], true);
     ACTIONS.lock().unwrap().push(HOTKEY_BASE + 20);
     window.poll();
@@ -357,6 +360,26 @@ fn settings_controls_roundtrip_and_page_layout() {
         assert!(!checked(window.keys[i][0]));
         assert_eq!(window.read().unwrap().hotkeys[i].key, "None");
     }
+    // 主キーなしでも左右の修飾キーだけでP2Tを設定できる。
+    let ptt = window.keys[11];
+    set_checked(ptt[0], true);
+    select(ptt[2], 1); // 左Ctrl
+    select(ptt[1], 4); // 左&右Shift
+    select(ptt[5], 0);
+    ACTIONS.lock().unwrap().push(HOTKEY_BASE + 115);
+    window.poll();
+    assert!(checked(ptt[0]));
+    assert!(!enabled(ptt[6]));
+    let selected = window.read().unwrap().hotkeys[11].clone();
+    assert!(selected.enabled && selected.modifier_only);
+    assert_eq!(selected.ctrl_side, crate::config::ModifierSide::Left);
+    assert_eq!(selected.shift_side, crate::config::ModifierSide::Both);
+    assert_eq!(selected.key, "None");
+    set_checked(ptt[0], false);
+    ACTIONS.lock().unwrap().push(HOTKEY_BASE + 110);
+    window.poll();
+    assert_eq!(selection(ptt[2]), 1);
+    assert_eq!(selection(ptt[1]), 4);
     // 表示・ノイズ・設定／入力4つと交互／出力3つと各P2T。
     let row_top = |i: usize| unsafe {
         let mut rect = RECT::default();
@@ -380,6 +403,34 @@ fn settings_controls_roundtrip_and_page_layout() {
             assert!(left(row[pair[0]]) < left(row[pair[1]]));
         }
         assert_eq!(text(row[6]), "共存");
+    }
+    // 選択中の最長表記も矢印に隠れず、全文を読める幅を確保する。
+    unsafe {
+        let dc = GetDC(Some(window.hwnd));
+        let old_font = SelectObject(dc, window.font.into());
+        let mut narrow = Vec::new();
+        for (column, label) in [
+            (2, "左&右Ctrl"),
+            (1, "左&右Shift"),
+            (4, "左&右Alt"),
+            (3, "左&右Windows"),
+        ] {
+            let mut size = SIZE::default();
+            let chars: Vec<u16> = label.encode_utf16().collect();
+            assert!(GetTextExtentPoint32W(dc, &chars, &mut size).as_bool());
+            let mut rect = RECT::default();
+            GetClientRect(window.keys[11][column], &mut rect).unwrap();
+            let needed = size.cx + GetSystemMetrics(SM_CXVSCROLL) + 8;
+            if rect.right - rect.left < needed {
+                narrow.push(format!(
+                    "{label}: {}px < {needed}px",
+                    rect.right - rect.left
+                ));
+            }
+        }
+        SelectObject(dc, old_font);
+        ReleaseDC(Some(window.hwnd), dc);
+        assert!(narrow.is_empty(), "{narrow:?}");
     }
     select(window.keys[0][6], 1);
     assert_eq!(
@@ -569,8 +620,8 @@ fn settings_controls_roundtrip_and_page_layout() {
         }
     }
     set_checked(window.keys[0][0], true);
-    set_checked(window.keys[0][1], true);
-    set_checked(window.keys[0][3], true);
+    select(window.keys[0][1], 3);
+    select(window.keys[0][3], 3);
     select(window.keys[0][5], 50);
     let changed = window.read().unwrap();
     assert_eq!(changed.hotkeys[0].key, "F24");
@@ -640,9 +691,16 @@ fn settings_controls_roundtrip_and_page_layout() {
     assert_eq!(synchronized.hotkeys[0], draft_key);
     assert_eq!(synchronized.rvc_parameters["pitch"], 12.0);
     assert!(!enabled(window.keys[11][5]));
-    // なしのまま有効だけチェックして適用しても、保存結果とグレー表示を一致させる。
+    // P2Tの主キーも修飾キーも未指定なら適用せず、理由を表示する。
     set_checked(window.keys[12][0], true);
     select(window.keys[12][5], 0);
+    for modifier in 1..=4 {
+        select(window.keys[12][modifier], 0);
+    }
+    ACTIONS.lock().unwrap().push(SAVE);
+    assert!(window.poll().is_none());
+    assert!(text(window.message).contains("修飾キー"));
+    set_checked(window.keys[12][0], false);
     ACTIONS.lock().unwrap().push(SAVE);
     let Some(Action::Save(applied)) = window.poll() else {
         panic!("適用要求がありません");

@@ -1,8 +1,8 @@
 //! 基本設定とRVC設定の構築・読み取り・操作。
 use super::super::{
     config::{
-        device_choices, is_default_device, Hotkey, KeyHandling, Mode, OverlayMode, Settings,
-        HOTKEY_COUNT, HOTKEY_LABELS, NOISE_PARAMETER,
+        device_choices, is_default_device, Hotkey, KeyHandling, Mode, ModifierSide, OverlayMode,
+        Settings, HOTKEY_COUNT, HOTKEY_LABELS, NOISE_PARAMETER,
     },
     ui,
 };
@@ -473,26 +473,40 @@ impl SettingsWindow {
                 self.label(&shortcut_title(settings, i), 20, y, 215, 28, 1)?;
             let k = &settings.hotkeys[i];
             let mut controls = [HWND::default(); 7];
-            // 列IDは旧設定・自動操作との互換のため保存し、作成順だけを表示順にする。
-            for (j, label, on, x, width) in [
-                (0, "有効", k.is_assigned(), 240, 60),
-                (2, "Ctrl", k.ctrl, 310, 65),
-                (1, "Shift", k.shift, 385, 72),
-                (4, "Alt", k.alt, 468, 62),
-                (3, "Windows", k.win, 540, 104),
-            ]
-            .into_iter()
-            {
-                controls[j] = self.checkbox(label, on, x, y, width, HOTKEY_BASE + i * 10 + j, 1)?;
+            // 列IDと保存順は維持し、修飾キーの表示順だけCtrl、Shift、Alt、Windowsにする。
+            controls[0] =
+                self.checkbox("有効", k.is_assigned(), 235, y, 55, HOTKEY_BASE + i * 10, 1)?;
+            for (j, name, on, side, x, width) in [
+                (2, "Ctrl", k.ctrl, k.ctrl_side, 292, 104),
+                (1, "Shift", k.shift, k.shift_side, 400, 104),
+                (4, "Alt", k.alt, k.alt_side, 508, 96),
+                (3, "Windows", k.win, k.win_side, 608, 136),
+            ] {
+                let choices = modifier_choices(name);
+                let selected = modifier_index(on, side);
+                controls[j] = self.combo(
+                    &choices,
+                    &choices[selected],
+                    false,
+                    x,
+                    y,
+                    width,
+                    HOTKEY_BASE + i * 10 + j,
+                    1,
+                )?;
+                self.tip(
+                    controls[j],
+                    "左|右はどちらか一方以上、左&右は左右同時です。不要は割当に含めません。",
+                )?;
             }
             let selected = if k.key == "None" { "なし" } else { &k.key };
             controls[5] = self.combo(
                 &key_choices,
                 selected,
                 false,
-                655,
+                750,
                 y,
-                125,
+                75,
                 HOTKEY_BASE + 5 + i * 10,
                 1,
             )?;
@@ -500,38 +514,15 @@ impl SettingsWindow {
                 &KeyHandling::ALL.map(|mode| mode.label().into()),
                 k.handling.label(),
                 false,
-                795,
+                830,
                 y,
-                120,
+                95,
                 HOTKEY_BASE + 6 + i * 10,
                 1,
             )?;
+            self.tip(controls[6], "共存は他のアプリにもキーを渡します。上書きは主キーを抑止します。修飾キーだけの押している間ONは共存です。")?;
             self.keys[i] = controls;
         }
-        self.label(
-            "共存：このツールで操作し、同じキー入力をOSや他のアプリにも渡します。",
-            20,
-            520,
-            905,
-            28,
-            1,
-        )?;
-        self.label(
-            "上書き：このツールで操作し、一致した主キーをOSや他アプリへ渡さないようにします。",
-            20,
-            550,
-            905,
-            28,
-            1,
-        )?;
-        self.label(
-            "修飾キー単独やOSの保護された操作など、抑止できない入力があります。",
-            20,
-            578,
-            905,
-            28,
-            1,
-        )?;
         Ok(())
     }
 
@@ -714,12 +705,19 @@ impl SettingsWindow {
                         crate::actions::RVC | crate::actions::SPK_RVC | crate::actions::NOISE
                     ));
             let enabled = available && checked(row[0]);
+            let modifier_only = crate::actions::ptt_event(crate::actions::HOTKEY_COMMANDS[index])
+                .is_some()
+                && selection(row[5]) == 0;
+            if enabled && modifier_only {
+                select(row[6], 0);
+            }
             unsafe {
                 let _ = EnableWindow(row[0], available);
                 let _ = EnableWindow(self.shortcut_titles[index], enabled);
                 for control in &row[1..] {
                     let _ = EnableWindow(*control, enabled);
                 }
+                let _ = EnableWindow(row[6], enabled && !modifier_only);
             }
         }
     }
@@ -795,17 +793,34 @@ impl SettingsWindow {
         }
         for (i, row) in self.keys.iter().enumerate() {
             let key = text(row[5]);
+            let (shift, shift_side) = read_modifier(row[1])?;
+            let (ctrl, ctrl_side) = read_modifier(row[2])?;
+            let (win, win_side) = read_modifier(row[3])?;
+            let (alt, alt_side) = read_modifier(row[4])?;
+            let ptt = crate::actions::ptt_event(crate::actions::HOTKEY_COMMANDS[i]).is_some();
+            let modifier_only = ptt && key == "なし" && (shift || ctrl || win || alt);
+            if checked(row[0]) && ptt && key == "なし" && !modifier_only {
+                return Err("押している間ONにはキーまたは修飾キーを指定してください".into());
+            }
             settings.hotkeys[i] = Hotkey {
-                handling: *KeyHandling::ALL
-                    .get(selection(row[6]))
-                    .ok_or("共存または上書きを選択してください")?,
-                enabled: checked(row[0]) && key != "なし",
-                shift: checked(row[1]),
-                ctrl: checked(row[2]),
-                win: checked(row[3]),
-                alt: checked(row[4]),
+                handling: if modifier_only {
+                    KeyHandling::Coexist
+                } else {
+                    *KeyHandling::ALL
+                        .get(selection(row[6]))
+                        .ok_or("共存または上書きを選択してください")?
+                },
+                enabled: checked(row[0]) && (key != "なし" || modifier_only),
+                shift,
+                ctrl,
+                win,
+                alt,
                 key: if key == "なし" { "None".into() } else { key },
-                ..self.base.hotkeys[i].clone()
+                shift_side,
+                ctrl_side,
+                win_side,
+                alt_side,
+                modifier_only,
             };
         }
         settings.overlay_mode = *OverlayMode::ALL
@@ -918,7 +933,11 @@ impl SettingsWindow {
                     && (id - HOTKEY_BASE - 5) % 10 == 0 =>
                 {
                     if let Some(row) = self.keys.get((id - HOTKEY_BASE - 5) / 10) {
-                        if selection(row[5]) == 0 {
+                        let index = (id - HOTKEY_BASE - 5) / 10;
+                        if selection(row[5]) == 0
+                            && crate::actions::ptt_event(crate::actions::HOTKEY_COMMANDS[index])
+                                .is_none()
+                        {
                             set_checked(row[0], false);
                         }
                     }
@@ -928,6 +947,38 @@ impl SettingsWindow {
             }
         }
         None
+    }
+}
+
+fn modifier_choices(name: &str) -> [String; 5] {
+    [
+        format!("{name}不要"),
+        format!("左{name}"),
+        format!("右{name}"),
+        format!("左|右{name}"),
+        format!("左&右{name}"),
+    ]
+}
+fn modifier_index(enabled: bool, side: ModifierSide) -> usize {
+    if !enabled {
+        0
+    } else {
+        match side {
+            ModifierSide::Left => 1,
+            ModifierSide::Right => 2,
+            ModifierSide::Either => 3,
+            ModifierSide::Both => 4,
+        }
+    }
+}
+fn read_modifier(handle: HWND) -> Result<(bool, ModifierSide), String> {
+    match selection(handle) {
+        0 => Ok((false, ModifierSide::Either)),
+        1 => Ok((true, ModifierSide::Left)),
+        2 => Ok((true, ModifierSide::Right)),
+        3 => Ok((true, ModifierSide::Either)),
+        4 => Ok((true, ModifierSide::Both)),
+        _ => Err("修飾キーの左右を選択してください".into()),
     }
 }
 
