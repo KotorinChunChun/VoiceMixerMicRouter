@@ -15,7 +15,11 @@ if(-not $SkipBuild){
   & cargo build --locked --manifest-path (Join-Path $root 'src/src-tauri/Cargo.toml') --target x86_64-pc-windows-msvc --release --bin voicemixer-mic -j 4
   if($LASTEXITCODE -ne 0){throw 'ネイティブEXEのビルド失敗'}
  }finally{$env:CARGO_TARGET_DIR=$oldTarget;$env:CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS=$oldFlags}
- & dotnet publish (Join-Path $root 'src/maintenance/MicRouter.Maintenance.csproj') -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:DebugType=None -p:DebugSymbols=false -o $helper --nologo
+ # SDKの既定パッチが古い場合も、公式の最新修正版を自己完結helperへ明示する。
+ $runtimeMetadata=Invoke-RestMethod 'https://builds.dotnet.microsoft.com/dotnet/release-metadata/10.0/releases.json' -TimeoutSec 30
+ $runtimeVersion=[string]$runtimeMetadata.'latest-runtime'
+ if($runtimeVersion -notmatch '^10\.0\.\d+$'){throw '.NET 10の最新ランタイム版を確認できません。'}
+ & dotnet publish (Join-Path $root 'src/maintenance/MicRouter.Maintenance.csproj') -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:DebugType=None -p:DebugSymbols=false "-p:RuntimeFrameworkVersion=$runtimeVersion" -p:TargetLatestRuntimePatch=true -o $helper --nologo
  if($LASTEXITCODE -ne 0){throw '保守helperの発行失敗'}
 }
 $info=[Diagnostics.FileVersionInfo]::GetVersionInfo($binary)
