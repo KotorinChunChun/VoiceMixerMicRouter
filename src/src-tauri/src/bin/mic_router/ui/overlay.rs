@@ -4,7 +4,7 @@ use super::super::telemetry::{self, Snapshot};
 use super::drawing::{draw_frame, paint_buffered};
 use super::{
     output_status, queue_action, wide, DIRECT, MONITOR, MUTED, NOISE, OUTPUT1, OUTPUT2, OVERLAY,
-    RVC, SPK_RVC,
+    RVC, SETTINGS, SPK_RVC,
 };
 use crate::actions::shortcut_badge;
 use std::{
@@ -104,7 +104,13 @@ const TELEMETRY_RECTS: [RECT; 3] = [
 const DISPLAY_RECT: RECT = RECT {
     left: 56,
     top: SETTINGS_TOP,
-    right: 250,
+    right: 202,
+    bottom: SETTINGS_TOP + 21,
+};
+const OPEN_SETTINGS_RECT: RECT = RECT {
+    left: 368,
+    top: SETTINGS_TOP,
+    right: 448,
     bottom: SETTINGS_TOP + 21,
 };
 fn control_at(controls: &[OverlayControl], x: i32, y: i32) -> Option<usize> {
@@ -144,14 +150,14 @@ fn overlay_controls(
             OVERLAY,
             format!("表示{}{}", shortcut_badge(keys, OVERLAY), display.label()),
             56,
-            250,
+            202,
             SETTINGS_TOP,
         ),
         (
             NOISE,
             format!("{noise}{}", shortcut_badge(keys, NOISE)),
-            254,
-            448,
+            206,
+            364,
             SETTINGS_TOP,
         ),
         (DIRECT, "MIC".into(), 56, 151, INPUT_TOP),
@@ -161,6 +167,13 @@ fn overlay_controls(
         (OUTPUT1, output_labels[0].clone(), 56, 184, OUTPUT_TOP),
         (OUTPUT2, output_labels[1].clone(), 188, 316, OUTPUT_TOP),
         (MONITOR, output_labels[2].clone(), 320, 448, OUTPUT_TOP),
+        (
+            SETTINGS,
+            format!("設定{}", shortcut_badge(keys, SETTINGS)),
+            OPEN_SETTINGS_RECT.left,
+            OPEN_SETTINGS_RECT.right,
+            SETTINGS_TOP,
+        ),
     ] {
         let text = if top == SETTINGS_TOP {
             label
@@ -256,7 +269,7 @@ fn overlay_expired(display: OverlayMode, elapsed: Duration) -> bool {
 }
 
 fn overlay_action_allowed_with(action: usize, locked: bool, allow_mode_escape: bool) -> bool {
-    !locked || (allow_mode_escape && matches!(action, DIRECT | MUTED))
+    !locked || action == SETTINGS || (allow_mode_escape && matches!(action, DIRECT | MUTED))
 }
 
 fn cursor_for_control(control: Option<usize>, dragging: bool) -> PCWSTR {
@@ -505,6 +518,10 @@ impl Overlay {
             buttons.holds,
         );
         configure_inputs(&mut controls, buttons.rvc_enabled, buttons.phase);
+        if let Some(settings) = controls.iter_mut().find(|c| c.action == SETTINGS) {
+            settings.active = self.state.locked.load(Ordering::Relaxed)
+                && !self.state.allow_mode_escape.load(Ordering::Relaxed);
+        }
         let controls_changed = {
             let mut current = self.state.controls.lock().unwrap();
             let changed = *current != controls;
@@ -534,6 +551,22 @@ impl Overlay {
         self.state
             .allow_mode_escape
             .store(allow_mode_escape, Ordering::Relaxed);
+        let changed = {
+            let mut controls = self.state.controls.lock().unwrap();
+            if let Some(settings) = controls.iter_mut().find(|c| c.action == SETTINGS) {
+                let active = locked && !allow_mode_escape;
+                let changed = settings.active != active;
+                settings.active = active;
+                changed
+            } else {
+                false
+            }
+        };
+        if changed {
+            unsafe {
+                let _ = InvalidateRect(Some(self.hwnd), Some(&OPEN_SETTINGS_RECT), false);
+            }
+        }
     }
     pub(super) fn update_telemetry(
         &mut self,

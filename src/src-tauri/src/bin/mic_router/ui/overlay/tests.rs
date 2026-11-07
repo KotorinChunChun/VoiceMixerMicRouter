@@ -118,10 +118,10 @@ fn overlay_actions_match_drawn_cells_and_output_states() {
         &crate::config::default_output_labels(),
         [false; 3],
     );
-    assert_eq!(controls.len(), 9);
+    assert_eq!(controls.len(), 10);
     assert_eq!(
         controls.iter().map(|c| c.action).collect::<Vec<_>>(),
-        vec![OVERLAY, NOISE, DIRECT, RVC, SPK_RVC, MUTED, OUTPUT1, OUTPUT2, MONITOR]
+        vec![OVERLAY, NOISE, DIRECT, RVC, SPK_RVC, MUTED, OUTPUT1, OUTPUT2, MONITOR, SETTINGS]
     );
     for c in &controls {
         assert_eq!(
@@ -134,6 +134,21 @@ fn overlay_actions_match_drawn_cells_and_output_states() {
     assert_eq!(controls[6].text, "配信用[F9]ON");
     assert_eq!(controls[7].text, "音声入力用[F10]OFF");
     assert_eq!(controls[8].text, "モニタ用[F11]ON");
+    assert_eq!(controls[9].text, "設定");
+    assert_eq!(controls[9].rect, OPEN_SETTINGS_RECT);
+
+    let mut with_setting_key = keys.clone();
+    with_setting_key[crate::actions::shortcut_index(SETTINGS).unwrap()] = "F24".into();
+    let controls = overlay_controls(
+        &with_setting_key,
+        Mode::Direct,
+        OverlayMode::Always,
+        [true, false, true],
+        "RVCノイズ抑制 ON",
+        &crate::config::default_output_labels(),
+        [false; 3],
+    );
+    assert_eq!(controls[9].text, "設定[F24]");
 }
 
 #[test]
@@ -179,7 +194,8 @@ fn input_selection_outputs_and_click_gaps_stay_independent() {
                 (349, 353, 40),
                 (184, 188, 82),
                 (316, 320, 82),
-                (250, 254, 16),
+                (202, 206, 16),
+                (364, 368, 16),
             ] {
                 for x in left..right {
                     assert_eq!(control_at(&controls, x, y), None);
@@ -235,12 +251,12 @@ fn countdown_and_cursor_follow_visibility_and_interaction_state() {
     assert_eq!(cursor_for_control(None, false), IDC_SIZEALL);
     assert_eq!(cursor_for_control(Some(DIRECT), true), IDC_SIZEALL);
     let actions = [
-        DIRECT, RVC, SPK_RVC, MUTED, OUTPUT1, OUTPUT2, MONITOR, NOISE, OVERLAY,
+        DIRECT, RVC, SPK_RVC, MUTED, OUTPUT1, OUTPUT2, MONITOR, NOISE, OVERLAY, SETTINGS,
     ];
     for (locked, escape, expected) in [
         (false, false, actions.to_vec()),
-        (true, false, vec![]),
-        (true, true, vec![DIRECT, MUTED]),
+        (true, false, vec![SETTINGS]),
+        (true, true, vec![DIRECT, MUTED, SETTINGS]),
     ] {
         let allowed: Vec<_> = actions
             .into_iter()
@@ -261,6 +277,86 @@ fn countdown_and_cursor_follow_visibility_and_interaction_state() {
             assert_eq!(cursor_for_control(control, true), IDC_SIZEALL);
         }
     }
+}
+
+#[test]
+#[ignore = "音声を起動せずWindowsオーバーレイのクリックを確認する実機GUI試験"]
+fn settings_button_operates_in_an_isolated_overlay() {
+    let mut overlay = Overlay::new(OverlayMode::Always).unwrap();
+    let keys = default_hotkeys().map(|k| k.key_label().to_owned());
+    let labels = crate::config::default_output_labels();
+    let content = (
+        String::new(),
+        String::new(),
+        String::new(),
+        0,
+        String::new(),
+    );
+    let buttons = || Buttons {
+        rvc_enabled: true,
+        phase: "running",
+        keys: &keys,
+        mode: Mode::Muted,
+        display: OverlayMode::Always,
+        outputs: [false; 3],
+        holds: [false; 3],
+        noise: "RVCノイズ抑制 OFF",
+        output_labels: &labels,
+    };
+    overlay.set_content(content.clone(), buttons());
+    overlay.show().unwrap();
+    let mut rect = RECT::default();
+    unsafe {
+        GetWindowRect(overlay.hwnd, &mut rect).unwrap();
+        SetWindowPos(
+            overlay.hwnd,
+            None,
+            rect.left,
+            rect.top + 300,
+            0,
+            0,
+            SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER,
+        )
+        .unwrap();
+    }
+    let hwnd = overlay.hwnd;
+    let position = |x: i32, y: i32| LPARAM((((y as u32) << 16) | x as u32) as isize);
+    let click = |x, y| unsafe {
+        SendMessageW(hwnd, WM_LBUTTONDOWN, None, Some(position(x, y)));
+        SendMessageW(hwnd, WM_LBUTTONUP, None, Some(position(x, y)));
+        std::mem::take(&mut *super::super::ACTIONS.lock().unwrap())
+    };
+    assert_eq!(click(400, SETTINGS_TOP + 10), vec![SETTINGS]);
+    overlay.set_interaction(true, false);
+    assert_eq!(click(400, SETTINGS_TOP + 10), vec![SETTINGS]);
+    assert!(click(70, INPUT_TOP + 10).is_empty());
+    overlay.set_content(content, buttons());
+    assert!(
+        overlay
+            .state
+            .controls
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|c| c.action == SETTINGS)
+            .unwrap()
+            .active
+    );
+    overlay.set_interaction(true, true);
+    assert_eq!(click(400, SETTINGS_TOP + 10), vec![SETTINGS]);
+    assert_eq!(click(70, INPUT_TOP + 10), vec![DIRECT]);
+    overlay.set_interaction(false, false);
+    assert!(
+        !overlay
+            .state
+            .controls
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|c| c.action == SETTINGS)
+            .unwrap()
+            .active
+    );
 }
 
 #[test]
@@ -294,14 +390,19 @@ fn buttons_render_on_off_pixels_and_fit_long_keys_at_twelve_pixels() {
         let font = overlay_control_font();
         let previous_font = SelectObject(dc, font.into());
         SetBkMode(dc, TRANSPARENT);
-        for key in ["F24", "なし"] {
+        for (key, noise) in [
+            ("F24", "RVCノイズ抑制 ON"),
+            ("F24", "RVCノイズ抑制 OFF"),
+            ("F24", "RVC未設定"),
+            ("なし", "RVCノイズ抑制 ON"),
+        ] {
             let keys = std::array::from_fn(|_| key.to_string());
             let controls = overlay_controls(
                 &keys,
                 Mode::Direct,
                 OverlayMode::Brief,
                 [false; 3],
-                "RVCノイズ抑制 ON",
+                noise,
                 &[
                     "音声入力用".into(),
                     "音声入力用".into(),
@@ -652,7 +753,7 @@ fn native_commands_menu_icons_and_nonactivating_overlay() {
         "表示[F12]数秒表示  RVCノイズ抑制 OFF / 配信用[F9]ON 音声入力用[F10]OFF モニタ用[F11]OFF"
     );
     // 実カーソルを動かさず、各メッセージの座標だけで押したセルを選ぶ。
-    // GetCursorPos で押下位置を読み直す実装では、この9セルを区別できない。
+    // GetCursorPos で押下位置を読み直す実装では、各セルを区別できない。
     let mouse_position =
         |x: i32, y: i32| LPARAM((((y as u16 as u32) << 16) | x as u16 as u32) as isize);
     let controls = ui.overlay.state.controls.lock().unwrap().clone();
@@ -764,10 +865,25 @@ fn native_commands_menu_icons_and_nonactivating_overlay() {
         .map(|c| c.active)
         .collect();
     let controls = ui.overlay.state.controls.lock().unwrap().clone();
-    // 設定画面中は全操作禁止。画面のない適用中だけMIC・送信停止へ戻れる。
-    for (escape, allowed) in [(false, vec![]), (true, vec![DIRECT, MUTED])] {
+    // 設定画面中も設定を再表示でき、画面のない適用中はMIC・送信停止へも戻れる。
+    for (escape, allowed) in [
+        (false, vec![SETTINGS]),
+        (true, vec![DIRECT, MUTED, SETTINGS]),
+    ] {
         ui.allow_mode_escape = escape;
         ui.poll().unwrap();
+        assert_eq!(
+            ui.overlay
+                .state
+                .controls
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|c| c.action == SETTINGS)
+                .unwrap()
+                .active,
+            !escape
+        );
         for control in &controls {
             let x = (control.rect.left + control.rect.right) / 2;
             let y = control.rect.top + 10;
@@ -1056,7 +1172,7 @@ fn native_commands_menu_icons_and_nonactivating_overlay() {
 }
 
 #[test]
-fn equal_buttons_share_row_edges_and_keep_four_pixel_gaps() {
+fn buttons_share_row_edges_and_keep_four_pixel_gaps() {
     let keys = default_hotkeys().map(|k| k.key_label().into());
     let controls = overlay_controls(
         &keys,
@@ -1067,14 +1183,16 @@ fn equal_buttons_share_row_edges_and_keep_four_pixel_gaps() {
         &crate::config::default_output_labels(),
         [false; 3],
     );
-    for (top, count) in [(SETTINGS_TOP, 2), (INPUT_TOP, 4), (OUTPUT_TOP, 3)] {
+    for (top, count) in [(SETTINGS_TOP, 3), (INPUT_TOP, 4), (OUTPUT_TOP, 3)] {
         let row: Vec<_> = controls.iter().filter(|c| c.rect.top == top).collect();
         assert_eq!(row.len(), count);
         assert_eq!(row[0].rect.left, 56);
         assert_eq!(row[count - 1].rect.right, 448);
-        let width = row[0].rect.right - row[0].rect.left;
-        for c in &row {
-            assert_eq!(c.rect.right - c.rect.left, width);
+        if top != SETTINGS_TOP {
+            let width = row[0].rect.right - row[0].rect.left;
+            for c in &row {
+                assert_eq!(c.rect.right - c.rect.left, width);
+            }
         }
         for pair in row.windows(2) {
             assert_eq!(pair[1].rect.left - pair[0].rect.right, 4);
