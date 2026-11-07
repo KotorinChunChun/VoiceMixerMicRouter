@@ -23,6 +23,8 @@ pub fn initialize(path: &Path, plugins: &Path) -> Result<bool, String> {
         }))
         .map_err(|e| e.to_string())
     })?;
+    // 旧設定の読み込みでは既定を変えず、新規作成時だけ新しいキーを設定する。
+    settings.hotkeys = crate::config::default_hotkeys();
     settings.rvc_enabled = false;
     settings.cable_enabled = false;
     settings.voice_input_enabled = false;
@@ -49,6 +51,10 @@ mod tests {
                 && !settings.voice_input_enabled
         );
         assert_eq!(settings.last_mode, Mode::Muted);
+        let ptt = &settings.hotkeys[13];
+        assert!(ptt.is_assigned() && ptt.modifier_only && ptt.ctrl && ptt.shift);
+        assert_eq!(ptt.ctrl_side, crate::config::ModifierSide::Left);
+        assert_eq!(ptt.shift_side, crate::config::ModifierSide::Left);
         let before = std::fs::read(&config).unwrap();
         assert!(!initialize(&config, &plugins).unwrap());
         assert_eq!(std::fs::read(&config).unwrap(), before);

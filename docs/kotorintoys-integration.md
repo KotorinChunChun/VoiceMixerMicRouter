@@ -1,6 +1,6 @@
 # KotorinToysへの登録引き継ぎ
 
-登録作業は管理PC側で行います。本リリースでは本体のソース・config・登録・Releasesを変更していません。
+本体側の製品登録と公開一覧はKotorinToys側で管理します。
 
 ## 製品情報
 
@@ -9,11 +9,11 @@
 | id | voice-mixer-mic-router |
 | name | VoiceMixerMicRouter |
 | appId | KotorinToys.VoiceMixerMicRouter |
-| version | 1.0.19 |
+| version | 1.0.23 |
 | installedExecutable | VoiceMixerMicRouter.exe |
 | repository | KotorinChunChun/VoiceMixerMicRouter |
-| tag | v1.0.19 |
-| installer | VoiceMixerMicRouter-1.0.19-setup.exe |
+| tag | v1.0.23 |
+| installer | VoiceMixerMicRouter-1.0.23-setup.exe |
 | 台帳 | VoiceMixerMicRouter-packages.json |
 
 Releaseの台帳のSHA-256と実ファイルを照合し、本体の固定ProductIdentityへ製品を追加します。mainのconfig/tools.jsonへ[自己完結した追加項目](kotorintoys-tool-entry.json)を追加します。開発登録はtool.jsonと独立Gitの採用コミットを使用します。configだけの追加では現在の本体の製品ホワイトリストを通過しないため、管理PCで本体をビルド・更新してください。

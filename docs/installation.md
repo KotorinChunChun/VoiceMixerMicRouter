@@ -1,6 +1,6 @@
 # インストールとRVCの追加設定
 
-Windows 11 x64向けです。GitHub ReleasesのVoiceMixerMicRouter-1.0.19-setup.exeを実行してください。利用者単位で導入し、管理者権限やWindows再起動を要求しません。未署名の開発版です。SHA256SUMS.txtで配布物の整合性を確認できます。
+Windows 11 x64向けです。GitHub ReleasesのVoiceMixerMicRouter-1.0.23-setup.exeを実行してください。利用者単位で導入し、管理者権限やWindows再起動を要求しません。未署名の開発版です。SHA256SUMS.txtで配布物の整合性を確認できます。
 
 ## 初回起動
 
@@ -22,4 +22,4 @@ Windowsの「インストールされているアプリ」から削除できま�
 
 ## KotorinToysからの利用
 
-管理PCでの本体側登録が必要です。このReleaseだけでは既存KotorinToysの固定製品一覧は増えません。[登録引き継ぎ](kotorintoys-integration.md)を使用してください。
+対応するKotorinToysでは、製品一覧から公開版を取得できます。[登録・管理契約](kotorintoys-integration.md)も参照してください。

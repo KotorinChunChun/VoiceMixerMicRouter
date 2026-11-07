@@ -35,7 +35,7 @@ fn settings() -> Settings {
     }
 }
 fn legacy_defaults() -> [Hotkey; HOTKEY_COUNT] {
-    let mut keys = default_hotkeys();
+    let mut keys = hotkey::legacy_default_hotkeys();
     for key in &mut keys {
         key.shift = false;
         key.alt = key.key != "None";
@@ -341,7 +341,7 @@ fn fourteen_action_defaults_and_three_row_migration_preserve_custom_keys() {
             "Shift+F10",
             "割当なし",
             "割当なし",
-            "割当なし"
+            "左Ctrl+左Shift"
         ]
     );
     let mut old = legacy_settings_json();
@@ -350,11 +350,41 @@ fn fourteen_action_defaults_and_three_row_migration_preserve_custom_keys() {
     old["hotkeys"][0]["shift"] = json!(true);
     let migrated: Settings = serde_json::from_value(old).unwrap();
     assert_eq!(migrated.hotkeys[0].label(), "Shift+Alt+F24");
+    assert!(!migrated.hotkeys[13].is_assigned());
     assert_eq!(migrated.hotkeys[4].label(), "Alt+F12");
     assert_eq!(migrated.hotkeys[5].label(), "Alt+F11");
     let roundtrip: Settings =
         serde_json::from_value(serde_json::to_value(&migrated).unwrap()).unwrap();
     assert_eq!(roundtrip.hotkeys, migrated.hotkeys);
+}
+
+#[test]
+fn new_output3_default_does_not_overwrite_saved_or_legacy_settings() {
+    let default = &default_hotkeys()[13];
+    assert!(default.is_assigned() && default.modifier_only);
+    assert_eq!(default.key, "None");
+    assert_eq!(default.label(), "左Ctrl+左Shift");
+    assert_eq!(default.handling, KeyHandling::Coexist);
+
+    let mut old = serde_json::to_value(settings()).unwrap();
+    old.as_object_mut().unwrap().remove("hotkeys");
+    let loaded: Settings = serde_json::from_value(old.clone()).unwrap();
+    assert!(!loaded.hotkeys[13].is_assigned());
+    for count in [3, 6, 7, 8, 9, 11, HOTKEY_COUNT] {
+        let mut keys = legacy_defaults().to_vec();
+        keys.truncate(count);
+        old["hotkeys"] = serde_json::to_value(keys).unwrap();
+        let loaded: Settings = serde_json::from_value(old.clone()).unwrap();
+        assert!(!loaded.hotkeys[13].is_assigned(), "旧{count}行");
+    }
+    let mut custom = legacy_defaults();
+    custom[13].enabled = true;
+    custom[13].key = "Z".into();
+    custom[13].ctrl = true;
+    custom[13].ctrl_side = ModifierSide::Right;
+    old["hotkeys"] = serde_json::to_value(&custom).unwrap();
+    let loaded: Settings = serde_json::from_value(old).unwrap();
+    assert_eq!(loaded.hotkeys[13], custom[13]);
 }
 #[test]
 fn none_roundtrips_and_eight_rows_keep_custom_bindings() {

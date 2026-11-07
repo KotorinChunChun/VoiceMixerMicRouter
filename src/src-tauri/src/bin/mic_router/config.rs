@@ -132,7 +132,10 @@ pub struct Settings {
     pub startup_mode: Option<Mode>,
     #[serde(default, skip_serializing)]
     pub hotkey: String,
-    #[serde(default = "default_hotkeys", deserialize_with = "deserialize_hotkeys")]
+    #[serde(
+        default = "hotkey::legacy_default_hotkeys",
+        deserialize_with = "deserialize_hotkeys"
+    )]
     pub hotkeys: [Hotkey; HOTKEY_COUNT],
     #[serde(default)]
     pub overlay_mode: OverlayMode,

@@ -429,7 +429,7 @@ fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::actions::{PTT1, PTT2};
+    use crate::actions::{PTT1, PTT2, PTT3};
     fn state() -> KeyState {
         let mut s = KeyState::new();
         s.bindings = vec![
@@ -545,6 +545,16 @@ mod tests {
         key.ctrl_side = side;
         key.modifier_only = true;
         key
+    }
+
+    #[test]
+    fn default_output3_requires_left_ctrl_and_left_shift() {
+        let mut state = KeyState::new();
+        state.bindings = bindings(&[(PTT3, crate::config::default_hotkeys()[13].clone())]).unwrap();
+        assert!(state.event(0xa2, true).is_empty());
+        assert!(state.event(0xa1, true).is_empty());
+        assert_eq!(state.event(0xa0, true), vec![PTT3]);
+        assert_eq!(state.event(0xa2, false), vec![PTT3 + PTT_RELEASE_OFFSET]);
     }
 
     #[test]

@@ -174,7 +174,7 @@ impl Hotkey {
         labels.join("+")
     }
 }
-pub fn default_hotkeys() -> [Hotkey; HOTKEY_COUNT] {
+pub(super) fn legacy_default_hotkeys() -> [Hotkey; HOTKEY_COUNT] {
     std::array::from_fn(|i| {
         let key = SHORTCUTS[i].default_key;
         Hotkey {
@@ -193,6 +193,17 @@ pub fn default_hotkeys() -> [Hotkey; HOTKEY_COUNT] {
         }
     })
 }
+pub fn default_hotkeys() -> [Hotkey; HOTKEY_COUNT] {
+    let mut keys = legacy_default_hotkeys();
+    let output3 = &mut keys[13];
+    output3.enabled = true;
+    output3.ctrl = true;
+    output3.shift = true;
+    output3.ctrl_side = ModifierSide::Left;
+    output3.shift_side = ModifierSide::Left;
+    output3.modifier_only = true;
+    keys
+}
 pub(super) fn deserialize_hotkeys<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<[Hotkey; HOTKEY_COUNT], D::Error> {
@@ -203,7 +214,7 @@ pub(super) fn deserialize_hotkeys<'de, D: serde::Deserializer<'de>>(
         ));
     }
     // 旧形式の追加既定を先に復元する。Shiftへの変更はSettings::loadで一度だけ行う。
-    let mut result = default_hotkeys();
+    let mut result = legacy_default_hotkeys();
     if keys.len() < HOTKEY_COUNT {
         for key in &mut result {
             key.shift = false;
