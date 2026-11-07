@@ -19,6 +19,43 @@ impl KeyHandling {
     }
 }
 
+/// 左右を区別しなかった従来の true は Either として扱う。
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModifierSide {
+    #[default]
+    Either,
+    Left,
+    Right,
+    Both,
+}
+
+impl ModifierSide {
+    pub fn matches(self, left: bool, right: bool) -> bool {
+        match self {
+            Self::Either => left || right,
+            Self::Left => left,
+            Self::Right => right,
+            Self::Both => left && right,
+        }
+    }
+    /// 主キー押下時は左右を区別して重複割当を判定する。
+    pub fn matches_exact(self, left: bool, right: bool) -> bool {
+        match self {
+            Self::Left => left && !right,
+            Self::Right => !left && right,
+            _ => self.matches(left, right),
+        }
+    }
+}
+
+fn is_either(side: &ModifierSide) -> bool {
+    *side == ModifierSide::Either
+}
+fn is_false(value: &bool) -> bool {
+    !value
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Hotkey {
     #[serde(default)]
@@ -29,10 +66,21 @@ pub struct Hotkey {
     pub win: bool,
     pub alt: bool,
     pub key: String,
+    #[serde(default, skip_serializing_if = "is_either")]
+    pub shift_side: ModifierSide,
+    #[serde(default, skip_serializing_if = "is_either")]
+    pub ctrl_side: ModifierSide,
+    #[serde(default, skip_serializing_if = "is_either")]
+    pub win_side: ModifierSide,
+    #[serde(default, skip_serializing_if = "is_either")]
+    pub alt_side: ModifierSide,
+    /// 新形式のP2Tだけに使用する。旧設定の有効・主キーなしは未割当のまま保つ。
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub modifier_only: bool,
 }
 impl Hotkey {
     pub fn is_assigned(&self) -> bool {
-        self.enabled && self.key != "None"
+        self.enabled && (self.key != "None" || (self.modifier_only && self.modifiers() != 0))
     }
     pub fn key_label(&self) -> &str {
         if self.is_assigned() {
@@ -63,22 +111,66 @@ impl Hotkey {
             | ((self.shift as u32) << 2)
             | ((self.win as u32) << 3)
     }
+    /// ビット順は Alt、Ctrl、Shift、Windows。
+    pub fn sides(&self) -> [ModifierSide; 4] {
+        [
+            self.alt_side,
+            self.ctrl_side,
+            self.shift_side,
+            self.win_side,
+        ]
+    }
+    pub fn conflicts_with(&self, other: &Self) -> bool {
+        if !self.is_assigned() || !other.is_assigned() || self.key != other.key {
+            return false;
+        }
+        let a = self.modifiers();
+        let b = other.modifiers();
+        if a != b {
+            return false;
+        }
+        for i in 0..4 {
+            if a & (1 << i) == 0 {
+                continue;
+            }
+            let left = self.sides()[i];
+            let right = other.sides()[i];
+            if self.key == "None" {
+                if left != right {
+                    return false;
+                }
+            } else if !(1..=3).any(|state| {
+                left.matches_exact(state & 1 != 0, state & 2 != 0)
+                    && right.matches_exact(state & 1 != 0, state & 2 != 0)
+            }) {
+                return false;
+            }
+        }
+        true
+    }
     pub fn label(&self) -> String {
         if !self.is_assigned() {
             return "割当なし".into();
         }
         let mut labels = Vec::new();
-        for (on, label) in [
-            (self.ctrl, "Ctrl"),
-            (self.shift, "Shift"),
-            (self.alt, "Alt"),
-            (self.win, "Win"),
+        for (on, side, label) in [
+            (self.ctrl, self.ctrl_side, "Ctrl"),
+            (self.shift, self.shift_side, "Shift"),
+            (self.alt, self.alt_side, "Alt"),
+            (self.win, self.win_side, "Win"),
         ] {
             if on {
-                labels.push(label);
+                labels.push(match side {
+                    ModifierSide::Either => label.to_owned(),
+                    ModifierSide::Left => format!("左{label}"),
+                    ModifierSide::Right => format!("右{label}"),
+                    ModifierSide::Both => format!("左&右{label}"),
+                });
             }
         }
-        labels.push(&self.key);
+        if self.key != "None" {
+            labels.push(self.key.clone());
+        }
         labels.join("+")
     }
 }
@@ -93,6 +185,11 @@ pub fn default_hotkeys() -> [Hotkey; HOTKEY_COUNT] {
             win: false,
             alt: false,
             key: key.into(),
+            shift_side: ModifierSide::Either,
+            ctrl_side: ModifierSide::Either,
+            win_side: ModifierSide::Either,
+            alt_side: ModifierSide::Either,
+            modifier_only: false,
         }
     })
 }

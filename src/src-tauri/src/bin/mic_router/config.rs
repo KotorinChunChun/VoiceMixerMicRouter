@@ -14,7 +14,7 @@ pub use crate::actions::{HOTKEY_COUNT, HOTKEY_LABELS};
 use audio_mixer_backend::windows::devices::DEFAULT_CONSOLE_ENDPOINT;
 pub use devices::{choose_cable, choose_microphone, device_choices, is_default_device};
 use hotkey::deserialize_hotkeys;
-pub use hotkey::{default_hotkeys, Hotkey, KeyHandling};
+pub use hotkey::{default_hotkeys, Hotkey, KeyHandling, ModifierSide};
 pub use project::{OUTPUT_SELECTOR, SOURCE_SELECTOR, VOICE_INPUT_OUTPUT};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -225,15 +225,25 @@ impl Settings {
                 );
             }
         }
-        let mut assigned = std::collections::HashSet::new();
-        for key in &self.hotkeys {
-            if key.key == "None" {
+        let mut assigned: Vec<&Hotkey> = Vec::new();
+        for (index, key) in self.hotkeys.iter().enumerate() {
+            if key.key == "None" && !key.modifier_only {
                 continue;
             }
-            let vk = key.virtual_key()?;
-            if key.enabled && !assigned.insert((key.modifiers(), vk)) {
+            if key.key == "None" {
+                if crate::actions::ptt_event(crate::actions::HOTKEY_COMMANDS[index]).is_none()
+                    || key.modifiers() == 0
+                    || key.handling != KeyHandling::Coexist
+                {
+                    return Err("修飾キー単独は押している間ONに共存で割り当ててください".into());
+                }
+            } else {
+                key.virtual_key()?;
+            }
+            if assigned.iter().any(|other| key.conflicts_with(other)) {
                 return Err("同じショートカットを複数の操作へ割り当てることはできません".into());
             }
+            assigned.push(key);
         }
         let mut outputs = std::collections::HashSet::new();
         for (on, id) in [

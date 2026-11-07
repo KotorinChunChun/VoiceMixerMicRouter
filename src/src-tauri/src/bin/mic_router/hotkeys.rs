@@ -1,5 +1,5 @@
 //! 全アプリとMSTSCの押下・解放を観測し、割当ごとに共存/上書きを適用する。
-use super::config::{Hotkey, KeyHandling};
+use super::config::{Hotkey, KeyHandling, ModifierSide};
 use crate::actions::{ptt_event, PTT_RELEASE_OFFSET};
 use std::{
     cell::RefCell,
@@ -29,23 +29,31 @@ struct Binding {
     modifiers: u32,
     vk: usize,
     handling: KeyHandling,
+    sides: [ModifierSide; 4],
 }
 fn bindings(values: &[(usize, Hotkey)]) -> Result<Vec<Binding>, String> {
     let mut result: Vec<Binding> = Vec::new();
+    let mut assigned: Vec<&Hotkey> = Vec::new();
     for (action, key) in values.iter().filter(|(_, k)| k.is_assigned()) {
-        let vk = key.virtual_key()? as usize;
+        let vk = if key.key == "None" {
+            if ptt_event(*action).is_none() || key.handling != KeyHandling::Coexist {
+                return Err("修飾キー単独は押している間ONに共存で割り当ててください".into());
+            }
+            0
+        } else {
+            key.virtual_key()? as usize
+        };
         let modifiers = key.modifiers();
-        if result
-            .iter()
-            .any(|b| b.vk == vk && b.modifiers == modifiers)
-        {
+        if assigned.iter().any(|other| key.conflicts_with(other)) {
             return Err("同じキーを複数の操作に割り当てられません".into());
         }
+        assigned.push(key);
         result.push(Binding {
             action: *action,
             modifiers,
             vk,
             handling: key.handling,
+            sides: key.sides(),
         });
     }
     Ok(result)
@@ -55,7 +63,22 @@ struct KeyState {
     down: [bool; 256],
     active: Vec<Binding>,
     suppressed: [bool; 256],
+    blocked: Vec<usize>,
 }
+
+fn matches_modifiers(down: &[bool; 256], b: &Binding, exact: bool) -> bool {
+    let keys = [(0xa4, 0xa5), (0xa2, 0xa3), (0xa0, 0xa1), (0x5b, 0x5c)];
+    keys.into_iter().enumerate().all(|(i, (left, right))| {
+        if b.modifiers & (1 << i) == 0 {
+            !exact || (!down[left] && !down[right])
+        } else if exact {
+            b.sides[i].matches_exact(down[left], down[right])
+        } else {
+            b.sides[i].matches(down[left], down[right])
+        }
+    })
+}
+
 impl KeyState {
     fn new() -> Self {
         Self {
@@ -63,13 +86,8 @@ impl KeyState {
             down: [false; 256],
             active: vec![],
             suppressed: [false; 256],
+            blocked: vec![],
         }
-    }
-    fn modifiers(&self) -> u32 {
-        (self.down[0xa4] || self.down[0xa5]) as u32
-            | (((self.down[0xa2] || self.down[0xa3]) as u32) << 1)
-            | (((self.down[0xa0] || self.down[0xa1]) as u32) << 2)
-            | (((self.down[0x5b] || self.down[0x5c]) as u32) << 3)
     }
     fn event(&mut self, vk: usize, pressed: bool) -> Vec<usize> {
         if vk >= 256 {
@@ -83,20 +101,35 @@ impl KeyState {
         }
         let repeated = self.down[vk];
         self.down[vk] = pressed;
-        let modifiers = self.modifiers();
         let mut events = vec![];
         self.active.retain(|b| {
-            let keep = self.down[b.vk] && (modifiers & b.modifiers) == b.modifiers;
+            let keep = (b.vk == 0 || self.down[b.vk]) && matches_modifiers(&self.down, b, false);
             if !keep {
                 events.push(b.action + PTT_RELEASE_OFFSET)
             }
             keep
         });
+        self.blocked.retain(|action| {
+            self.bindings
+                .iter()
+                .any(|b| b.action == *action && matches_modifiers(&self.down, b, false))
+        });
         if pressed && !repeated {
+            if MODIFIER_KEYS.contains(&vk) {
+                for b in self.bindings.iter().filter(|b| b.vk == 0) {
+                    if !self.active.iter().any(|active| active.action == b.action)
+                        && !self.blocked.contains(&b.action)
+                        && matches_modifiers(&self.down, b, false)
+                    {
+                        events.push(b.action);
+                        self.active.push(b.clone());
+                    }
+                }
+            }
             if let Some(b) = self
                 .bindings
                 .iter()
-                .find(|b| b.vk == vk && b.modifiers == modifiers)
+                .find(|b| b.vk != 0 && b.vk == vk && matches_modifiers(&self.down, b, true))
                 .cloned()
             {
                 events.push(b.action);
@@ -114,7 +147,10 @@ impl KeyState {
         let matched = pressed
             && !self.down[vk]
             && self.bindings.iter().any(|b| {
-                b.vk == vk && b.modifiers == self.modifiers() && b.handling == KeyHandling::Override
+                b.vk != 0
+                    && b.vk == vk
+                    && matches_modifiers(&self.down, b, true)
+                    && b.handling == KeyHandling::Override
             });
         let suppress = self.suppressed[vk] || matched;
         let events = self.event(vk, pressed);
@@ -133,10 +169,15 @@ impl KeyState {
             .map(|b| b.action + PTT_RELEASE_OFFSET)
             .collect();
         for b in &values {
-            if !self.bindings.iter().any(|old| old.vk == b.vk) {
+            if b.vk != 0 && !self.bindings.iter().any(|old| old.vk == b.vk) {
                 self.down[b.vk] = is_down(b.vk)
             }
         }
+        self.blocked = values
+            .iter()
+            .filter(|b| b.vk == 0 && matches_modifiers(&self.down, b, false))
+            .map(|b| b.action)
+            .collect();
         self.bindings = values;
         released
     }
@@ -146,6 +187,7 @@ impl KeyState {
             .active
             .iter()
             .map(|b| b.vk)
+            .filter(|vk| *vk != 0)
             .chain(MODIFIER_KEYS)
             .collect();
         for vk in keys {
@@ -396,18 +438,21 @@ mod tests {
                 modifiers: 1,
                 vk: 0x74,
                 handling: KeyHandling::Coexist,
+                sides: [ModifierSide::Either; 4],
             },
             Binding {
                 action: PTT1,
                 modifiers: 1,
                 vk: 0x75,
                 handling: KeyHandling::Coexist,
+                sides: [ModifierSide::Either; 4],
             },
             Binding {
                 action: PTT2,
                 modifiers: 1,
                 vk: 0x76,
                 handling: KeyHandling::Coexist,
+                sides: [ModifierSide::Either; 4],
             },
         ];
         s
@@ -491,5 +536,93 @@ mod tests {
         assert!(bindings(&[(1, key.clone()), (2, key.clone())]).is_err());
         key.enabled = false;
         assert!(bindings(&[(1, key)]).unwrap().is_empty());
+    }
+
+    fn modifier_ptt(side: ModifierSide) -> Hotkey {
+        let mut key = super::super::config::default_hotkeys()[11].clone();
+        key.enabled = true;
+        key.ctrl = true;
+        key.ctrl_side = side;
+        key.modifier_only = true;
+        key
+    }
+
+    #[test]
+    fn modifier_only_left_and_right_can_hold_independent_outputs() {
+        let mut s = KeyState::new();
+        let values = bindings(&[
+            (PTT1, modifier_ptt(ModifierSide::Left)),
+            (PTT2, modifier_ptt(ModifierSide::Right)),
+        ])
+        .unwrap();
+        s.replace_bindings(values, |_| false);
+        assert_eq!(s.observe(0xa2, true), (vec![PTT1], false));
+        assert_eq!(s.observe(0xa3, true), (vec![PTT2], false));
+        assert_eq!(s.observe(0xa2, false), (vec![PTT1 + 3], false));
+        assert_eq!(s.observe(0xa3, false), (vec![PTT2 + 3], false));
+    }
+
+    #[test]
+    fn modifier_only_either_holds_until_both_released_and_both_requires_both() {
+        let mut s = KeyState::new();
+        let values = bindings(&[
+            (PTT1, modifier_ptt(ModifierSide::Either)),
+            (PTT2, modifier_ptt(ModifierSide::Both)),
+        ])
+        .unwrap();
+        s.replace_bindings(values, |_| false);
+        assert_eq!(s.event(0xa3, true), vec![PTT1]);
+        assert_eq!(s.event(0xa2, true), vec![PTT2]);
+        assert_eq!(s.event(0xa3, false), vec![PTT2 + 3]);
+        assert_eq!(s.event(0xa2, false), vec![PTT1 + 3]);
+    }
+
+    #[test]
+    fn modifier_only_chord_has_no_order_dependency_and_rebind_does_not_retrigger() {
+        let mut key = modifier_ptt(ModifierSide::Left);
+        key.shift = true;
+        key.shift_side = ModifierSide::Right;
+        let mut s = KeyState::new();
+        let values = bindings(&[(PTT1, key)]).unwrap();
+        s.replace_bindings(values.clone(), |_| false);
+        assert!(s.event(0xa1, true).is_empty());
+        assert_eq!(s.event(0xa2, true), vec![PTT1]);
+        assert_eq!(s.replace_bindings(values, |_| true), vec![PTT1 + 3]);
+        assert!(s.event(0xa4, true).is_empty());
+        assert!(s.event(0xa1, false).is_empty());
+        assert_eq!(s.event(0xa1, true), vec![PTT1]);
+        assert_eq!(s.reconcile(|vk| vk != 0xa2), vec![PTT1 + 3]);
+    }
+
+    #[test]
+    fn primary_key_distinguishes_left_right_and_preserves_override_pairs() {
+        let mut left = super::super::config::default_hotkeys()[0].clone();
+        left.shift = false;
+        left.ctrl = true;
+        left.ctrl_side = ModifierSide::Left;
+        left.handling = KeyHandling::Override;
+        let mut right = left.clone();
+        right.ctrl_side = ModifierSide::Right;
+        let mut s = KeyState::new();
+        s.replace_bindings(bindings(&[(1, left.clone()), (2, right)]).unwrap(), |_| {
+            false
+        });
+        s.observe(0xa2, true);
+        assert_eq!(s.observe(0x74, true), (vec![1], true));
+        s.observe(0xa2, false);
+        assert_eq!(s.observe(0x74, false), (vec![], true));
+        s.observe(0xa3, true);
+        assert_eq!(s.observe(0x74, true), (vec![2], true));
+        let mut any = left.clone();
+        any.ctrl_side = ModifierSide::Either;
+        assert!(bindings(&[(1, left), (2, any)]).is_err());
+    }
+
+    #[test]
+    fn modifier_only_rejects_override_and_non_ptt() {
+        let mut key = modifier_ptt(ModifierSide::Both);
+        assert!(bindings(&[(1, key.clone())]).is_err());
+        key.handling = KeyHandling::Override;
+        assert!(bindings(&[(PTT1, key)]).is_err());
     }
 }

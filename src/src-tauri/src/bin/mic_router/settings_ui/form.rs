@@ -805,6 +805,7 @@ impl SettingsWindow {
                 win: checked(row[3]),
                 alt: checked(row[4]),
                 key: if key == "なし" { "None".into() } else { key },
+                ..self.base.hotkeys[i].clone()
             };
         }
         settings.overlay_mode = *OverlayMode::ALL

@@ -428,6 +428,7 @@ fn native_commands_menu_icons_and_nonactivating_overlay() {
         win: false,
         alt: false,
         key: "V".into(),
+        ..default_hotkeys()[0].clone()
     });
     let mut ui = Ui::new(Mode::Direct, &keys, OverlayMode::Brief, None, false, false).unwrap();
     ui.update(Mode::Direct, "running", "MIC").unwrap();

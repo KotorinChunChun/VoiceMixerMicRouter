@@ -300,6 +300,28 @@ fn arbitrary_keys_conflicts_and_old_settings_migrate() {
     assert_eq!(migrated.hotkeys[2].key, "V");
     assert!(!migrated.hotkeys[0].enabled && !migrated.monitoring);
 }
+
+#[test]
+fn modifier_only_and_side_choices_roundtrip_without_activating_legacy_none() {
+    let mut old = serde_json::to_value(settings()).unwrap();
+    old["hotkeys"][11]["enabled"] = json!(true);
+    old["hotkeys"][11]["ctrl"] = json!(true);
+    old["hotkeys"][11]["key"] = json!("None");
+    let migrated: Settings = serde_json::from_value(old).unwrap();
+    assert!(!migrated.hotkeys[11].is_assigned());
+    assert_eq!(migrated.hotkeys[11].ctrl_side, ModifierSide::Either);
+    let mut current = migrated;
+    current.hotkeys[11].modifier_only = true;
+    current.hotkeys[11].ctrl_side = ModifierSide::Both;
+    current.hotkeys[11].shift = true;
+    current.hotkeys[11].shift_side = ModifierSide::Right;
+    assert_eq!(current.hotkeys[11].label(), "左&右Ctrl+右Shift");
+    assert!(current.validate().is_ok());
+    let again: Settings = serde_json::from_value(serde_json::to_value(&current).unwrap()).unwrap();
+    assert_eq!(again.hotkeys, current.hotkeys);
+    current.hotkeys[11].handling = KeyHandling::Override;
+    assert!(current.validate().is_err());
+}
 #[test]
 fn fourteen_action_defaults_and_three_row_migration_preserve_custom_keys() {
     let defaults = default_hotkeys();
