@@ -68,6 +68,38 @@ fn settings_controls_roundtrip_and_page_layout() {
         crate::window_title::WindowTitle::create("設定")
     );
     assert_eq!(window.devices.len(), 5);
+    assert_eq!(window.sounds.map(selection), [1, 2, 3, 4, 5, 6, 7]);
+    let sound_device = window.sound_device.as_ref().unwrap();
+    assert_eq!(sound_device.devices[0].0, "default://console");
+    assert_eq!(sound_device.devices[1].0, "default://communications");
+    assert!(sound_device.devices.iter().any(|d| d.0 == "Alpha render"));
+    select(window.sounds[0], 0);
+    select(window.sounds[1], 3);
+    assert_eq!(window.read().unwrap().switch_sounds, [0, 3, 3, 4, 5, 6, 7]);
+    select(window.sounds[0], 1);
+    select(window.sounds[1], 2);
+    let sound_device = window.sound_device.as_ref().unwrap();
+    let device_index = sound_device
+        .devices
+        .iter()
+        .position(|d| d.0 == "Alpha render")
+        .unwrap();
+    select(sound_device.handle, device_index);
+    select(window.sounds[0], 4);
+    assert_eq!(window.read().unwrap().sound_device_id, "Alpha render");
+    unsafe {
+        SendMessageW(
+            window.hwnd,
+            WM_COMMAND,
+            Some(WPARAM(((CBN_SELCHANGE as usize) << 16) | 500)),
+            None,
+        );
+    }
+    assert!(matches!(window.poll(), Some(Action::Preview(4, device)) if device == "Alpha render"));
+    let sound_device = window.sound_device.as_ref().unwrap();
+    select(sound_device.handle, 0);
+    select(window.sounds[0], 1);
+
     for field in &window.devices {
         assert_eq!(field.devices[0].0, "default://console");
         assert_eq!(field.devices[1].0, "default://communications");
@@ -461,9 +493,9 @@ fn settings_controls_roundtrip_and_page_layout() {
             )
             .0
         },
-        3
+        4
     );
-    for page in 0..3 {
+    for page in 0..4 {
         // ネイティブタブの選択通知で可視ページと選択状態を一致させる。
         unsafe {
             SendMessageW(window.tab, TCM_SETCURSEL, Some(WPARAM(page)), None);

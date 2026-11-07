@@ -134,6 +134,14 @@ impl SharedAudioRing {
         write.saturating_sub(read).min(header.capacity_samples) as usize
     }
 
+    /// 入出力の順序対応に使う単調増加サンプル位置。
+    pub fn read_cursor(&self) -> u64 {
+        self.header().read_index.load(Ordering::Acquire)
+    }
+    pub fn write_cursor(&self) -> u64 {
+        self.header().write_index.load(Ordering::Acquire)
+    }
+
     pub fn queued_frames(&self) -> usize {
         let channels = usize::from(self.channels().max(1));
         self.available_read() / channels

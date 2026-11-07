@@ -39,7 +39,7 @@ try{
  foreach($origin in 'host_manual','direct_task','via_kotorintoys'){
   $running=Start-Process -FilePath $Executable -ArgumentList @('--config',('"'+$Configuration+'"'),'--startup','--launch-origin',$origin) -WindowStyle Hidden -PassThru
   $status=WaitReady
-  Check ($status.protocolVersion -eq 2 -and $status.ready -and $status.version -eq '1.0.18') 'CurrentUserOnlyから管理契約2へ実接続'
+  Check ($status.protocolVersion -eq 2 -and $status.ready -and $status.version -eq '1.0.19') 'CurrentUserOnlyから管理契約2へ実接続'
   Check ($status.pid -eq $running.Id -and $status.launchOrigin -eq $origin) "PIDと起動経路 $origin"
   $overlay=[Mic118Window]::FindWindow('VoiceMixerMicOverlayV1',[NullString]::Value)
   Check (-not[Mic118Window]::IsWindowVisible($overlay)) '--startupでオーバーレイを無表示'

@@ -35,6 +35,11 @@ pub trait AudioSource: Send + Sync {
     /// from a pre-filled ring/jitter buffer and return silence on underflow.
     fn read_into(&self, block: &mut AudioBlock) -> Result<()>;
 
+    /// 現在取り込み済みのフレーム数。既定はキューを持たない入力。
+    fn queued_frames(&self) -> usize {
+        0
+    }
+
     /// 前回報告からライブ入力が遅延回復のために破棄したサンプル数。
     fn take_discarded_samples(&self) -> u64 {
         0
@@ -252,6 +257,14 @@ impl AudioRuntime {
         settings.validate()?;
         self.settings.store(Arc::new(settings));
         Ok(())
+    }
+
+    pub fn source_queued_frames(&self, node_id: NodeId) -> usize {
+        self.bindings
+            .load()
+            .sources
+            .get(&node_id)
+            .map_or(0, |source| source.queued_frames())
     }
 
     pub fn bind_source(&self, node_id: NodeId, source: Arc<dyn AudioSource>) {

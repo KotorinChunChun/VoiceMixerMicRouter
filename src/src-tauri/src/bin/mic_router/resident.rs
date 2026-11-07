@@ -235,6 +235,12 @@ pub fn run(
                         commands
                             .send(engine::Command::Hold(held))
                             .map_err(|e| e.to_string())?;
+                        commands
+                            .send(engine::Command::Sound(
+                                settings.switch_sounds[4 + index],
+                                settings.sound_device_id.clone(),
+                            ))
+                            .map_err(|e| e.to_string())?;
                         let effective = settings.with_output_holds(held);
                         ui.cable_enabled = effective.cable_enabled;
                         ui.voice_input_enabled = effective.voice_input_enabled;
@@ -320,6 +326,20 @@ pub fn run(
                                 _ => engine::Command::Set(desired, generation),
                             })
                             .map_err(|e| e.to_string())?;
+                        if !matches!(action, ui::RETRY | ui::RELEASE_RVC) {
+                            let index = match desired {
+                                Mode::Direct => 0,
+                                Mode::Rvc => 1,
+                                Mode::SpeakerRvc => 2,
+                                Mode::Muted => 3,
+                            };
+                            commands
+                                .send(engine::Command::Sound(
+                                    settings.switch_sounds[index],
+                                    settings.sound_device_id.clone(),
+                                ))
+                                .map_err(|e| e.to_string())?;
+                        }
                     }
                     ui::OVERLAY => {
                         let mut candidate = settings.clone();
@@ -400,6 +420,11 @@ pub fn run(
             if let Some(action) = window.as_mut().and_then(|w| w.poll()) {
                 match action {
                     settings_ui::Action::Close => window = None,
+                    settings_ui::Action::Preview(choice, device) => {
+                        commands
+                            .send(engine::Command::Sound(choice, device))
+                            .map_err(|e| e.to_string())?;
+                    }
                     settings_ui::Action::Save(_) if pending.is_some() => {
                         if let Some(w) = &window {
                             w.message("切替の反映が終わってから適用してください");
@@ -449,6 +474,23 @@ pub fn run(
                     if applied {
                         settings = candidate;
                         ui.rvc_enabled = settings.rvc_enabled;
+                        if let ApplyOrigin::Shortcut(action) = origin {
+                            let index = match action {
+                                ui::OUTPUT1 => Some(4),
+                                ui::OUTPUT2 => Some(5),
+                                ui::MONITOR => Some(6),
+                                _ => None,
+                            };
+                            if let Some(index) = index {
+                                commands
+                                    .send(engine::Command::Sound(
+                                        settings.switch_sounds[index],
+                                        settings.sound_device_id.clone(),
+                                    ))
+                                    .map_err(|e| e.to_string())?;
+                            }
+                        }
+
                         desired = settings.available_mode(desired);
                         ui.startup = settings.startup_mode;
                         ui.output_labels = settings.output_labels.clone();

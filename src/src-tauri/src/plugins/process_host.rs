@@ -119,6 +119,8 @@ struct ProcessTransformInstance {
     prepared: bool,
     started: bool,
     latest_stats: Option<PluginStats>,
+    drain_target: Option<u64>,
+    drain_remaining: Option<usize>,
 }
 
 impl ProcessTransformInstance {
@@ -151,6 +153,8 @@ impl ProcessTransformInstance {
             prepared: false,
             started: false,
             latest_stats: None,
+            drain_target: None,
+            drain_remaining: None,
         }
     }
 
@@ -546,6 +550,23 @@ impl TransformInstance for ProcessTransformInstance {
             return Ok(());
         }
         self.poll_runtime_state()?;
+        if let Some(remaining) = self.drain_remaining {
+            if let Some(input) = inputs.first_mut() {
+                let keep = remaining.min(input.samples.len());
+                input.samples[keep..].fill(0.0);
+                let next = remaining - keep;
+                self.drain_remaining = Some(next);
+                if next == 0 && self.drain_target.is_none() {
+                    if let (Some(ring), Some(latency)) = (&self.input_ring, self.latency_frames) {
+                        self.drain_target = Some(
+                            ring.write_cursor()
+                                .saturating_add(keep as u64)
+                                .saturating_add(u64::from(latency) * u64::from(ring.channels())),
+                        );
+                    }
+                }
+            }
+        }
         if let (Some(input_ring), Some(output_ring)) =
             (self.input_ring_v2.as_mut(), self.output_ring_v2.as_mut())
         {
@@ -661,6 +682,38 @@ impl TransformInstance for ProcessTransformInstance {
             .unwrap_or(0)
     }
 
+    fn begin_drain(&mut self, preserve_frames: usize) -> bool {
+        let (Some(input), Some(_output), Some(latency)) =
+            (&self.input_ring, &self.output_ring, self.latency_frames)
+        else {
+            return false;
+        };
+        let remaining = preserve_frames.saturating_mul(usize::from(input.channels()));
+        self.drain_remaining = Some(remaining);
+        self.drain_target = if remaining == 0 {
+            Some(
+                input
+                    .write_cursor()
+                    .saturating_add(u64::from(latency) * u64::from(input.channels())),
+            )
+        } else {
+            None
+        };
+        true
+    }
+    fn drain_cutoff_set(&self) -> bool {
+        self.drain_target.is_some()
+    }
+    fn drain_finished(&self) -> bool {
+        self.drain_target
+            .zip(self.output_ring.as_ref())
+            .is_some_and(|(target, output)| output.read_cursor() >= target)
+    }
+    fn end_drain(&mut self) {
+        self.drain_target = None;
+        self.drain_remaining = None;
+    }
+
     fn latest_stats(&self) -> Option<PluginStats> {
         self.latest_stats.clone()
     }
@@ -734,5 +787,89 @@ mod tests {
             };
             assert_eq!(remaining, 2, "{path}: エラー時も出力2フレームを回収する");
         }
+    }
+    #[test]
+    fn drain_mutes_new_input_until_old_samples_and_reported_latency_are_consumed() {
+        let package = crate::plugins::package::load_package_manifest(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins/rvc-cuda/plugin.json"),
+        )
+        .unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let mut instance = ProcessTransformInstance::new(
+            package.descriptor,
+            PathBuf::new(),
+            temp.path().into(),
+            Vec::new(),
+            Duration::from_secs(1),
+            BTreeMap::new(),
+        );
+        instance.started = true;
+        instance.latency_frames = Some(2);
+        let mut input = SharedAudioRing::create(temp.path().join("input"), 64, 48000, 2).unwrap();
+        let mut output = SharedAudioRing::create(temp.path().join("output"), 64, 48000, 2).unwrap();
+        assert_eq!(input.push(&[0.75; 8]), 8);
+        assert_eq!(output.push(&[0.25; 12]), 12);
+        instance.input_ring = Some(input);
+        instance.output_ring = Some(output);
+        assert!(instance.begin_drain(0));
+        assert!(!instance.drain_finished());
+        let mut inputs = [AudioBlock::from_interleaved_stereo(vec![0.9; 4])];
+        let mut outputs = [AudioBlock::silence(2)];
+        for _ in 0..2 {
+            inputs[0].samples.fill(0.9);
+            instance.process_ports(&mut inputs, &mut outputs).unwrap();
+            assert_eq!(outputs[0].samples, vec![0.25; 4]);
+            assert!(inputs[0].samples.iter().all(|x| *x == 0.0));
+            assert!(!instance.drain_finished());
+        }
+        inputs[0].samples.fill(0.9);
+        instance.process_ports(&mut inputs, &mut outputs).unwrap();
+        assert!(instance.drain_finished());
+        instance.end_drain();
+        inputs[0].samples.fill(0.9);
+        instance.process_ports(&mut inputs, &mut outputs).unwrap();
+        assert!(inputs[0].samples.iter().all(|x| *x == 0.9));
+    }
+    #[test]
+    fn drain_preserves_capture_backlog_before_zeroing_later_samples() {
+        let package = crate::plugins::package::load_package_manifest(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../plugins/rvc-cuda/plugin.json"),
+        )
+        .unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let mut instance = ProcessTransformInstance::new(
+            package.descriptor,
+            PathBuf::new(),
+            temp.path().into(),
+            Vec::new(),
+            Duration::from_secs(1),
+            BTreeMap::new(),
+        );
+        instance.started = true;
+        instance.latency_frames = Some(2);
+        let mut input = SharedAudioRing::create(temp.path().join("input"), 64, 48000, 2).unwrap();
+        let mut output = SharedAudioRing::create(temp.path().join("output"), 64, 48000, 2).unwrap();
+        input.push(&[0.75; 8]);
+        output.push(&[0.25; 20]);
+        instance.input_ring = Some(input);
+        instance.output_ring = Some(output);
+        assert!(instance.begin_drain(3));
+        assert!(!instance.drain_cutoff_set());
+        let mut inputs = [AudioBlock::from_interleaved_stereo(vec![0.9; 4])];
+        let mut outputs = [AudioBlock::silence(2)];
+        instance.process_ports(&mut inputs, &mut outputs).unwrap();
+        assert_eq!(inputs[0].samples, vec![0.9; 4]);
+        assert!(!instance.drain_cutoff_set());
+        inputs[0].samples.fill(0.9);
+        instance.process_ports(&mut inputs, &mut outputs).unwrap();
+        assert_eq!(inputs[0].samples, vec![0.9, 0.9, 0.0, 0.0]);
+        assert!(instance.drain_cutoff_set());
+        assert!(!instance.drain_finished());
+        for _ in 0..3 {
+            inputs[0].samples.fill(0.9);
+            instance.process_ports(&mut inputs, &mut outputs).unwrap();
+            assert!(inputs[0].samples.iter().all(|x| *x == 0.0));
+        }
+        assert!(instance.drain_finished());
     }
 }

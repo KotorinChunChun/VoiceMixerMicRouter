@@ -22,6 +22,7 @@ use std::{
 
 pub enum Command {
     Hold([bool; 3]),
+    Sound(u8, String),
     Set(Mode, u64),
     Configure(Box<Settings>, u64),
     ReleaseRvc(u64),

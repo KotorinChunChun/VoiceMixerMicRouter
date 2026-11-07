@@ -73,6 +73,9 @@ impl RingInputSource {
     }
 }
 impl AudioSource for RingInputSource {
+    fn queued_frames(&self) -> usize {
+        self.ring.len_samples() / 2
+    }
     fn take_discarded_samples(&self) -> u64 {
         let total = self.ring.discarded_samples();
         total.saturating_sub(self.reported_discards.swap(total, Ordering::Relaxed))

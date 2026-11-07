@@ -51,7 +51,7 @@ unsafe extern "system" fn proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LR
             if header.idFrom == TAB && header.code == TCN_SELCHANGE {
                 let selected =
                     unsafe { SendMessageW(header.hwndFrom, TCM_GETCURSEL, None, None).0 };
-                if (0..3).contains(&selected) {
+                if (0..4).contains(&selected) {
                     ACTIONS.lock().unwrap().push(10 + selected as usize);
                 }
                 return LRESULT(0);
@@ -101,13 +101,13 @@ pub fn dialog_message(msg: &MSG) -> bool {
                 if !windows::Win32::UI::Input::KeyboardAndMouse::IsWindowEnabled(tab).as_bool() {
                     return true;
                 }
-                let current = SendMessageW(tab, TCM_GETCURSEL, None, None).0.clamp(0, 2);
+                let current = SendMessageW(tab, TCM_GETCURSEL, None, None).0.clamp(0, 3);
                 let step = if GetKeyState(VK_SHIFT.0 as i32) < 0 {
-                    2
+                    3
                 } else {
                     1
                 };
-                let next = (current + step) % 3;
+                let next = (current + step) % 4;
                 SendMessageW(tab, TCM_SETCURSEL, Some(WPARAM(next as usize)), None);
                 ACTIONS.lock().unwrap().push(10 + next as usize);
                 let _ = windows::Win32::UI::Input::KeyboardAndMouse::SetFocus(Some(tab));
@@ -137,11 +137,13 @@ pub struct SettingsWindow {
     tips: Option<tooltip::Tooltips>,
     icon: HICON,
     base: Settings,
-    pages: [Vec<HWND>; 3],
+    pages: [Vec<HWND>; 4],
     tab: HWND,
     keys: Vec<[HWND; 7]>,
     devices: Vec<DeviceControl>,
     parameters: Vec<ParameterControl>,
+    sounds: [HWND; 7],
+    sound_device: Option<DeviceControl>,
     overlay: HWND,
     outputs: [HWND; 3],
     output_labels: [HWND; 3],
@@ -157,6 +159,7 @@ pub struct SettingsWindow {
 pub enum Action {
     Save(Box<Settings>),
     Close,
+    Preview(u8, String),
 }
 impl Drop for SettingsWindow {
     fn drop(&mut self) {
