@@ -303,3 +303,7 @@ impl Drop for SettingsWindow {
         }
     }
 }
+
+#[cfg(debug_assertions)]
+#[path = "settings_ui/manual_preview.rs"]
+pub mod manual_preview;

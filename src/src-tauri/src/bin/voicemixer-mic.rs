@@ -40,6 +40,15 @@ mod ui;
 mod window_title;
 
 fn main() {
+    #[cfg(all(windows, debug_assertions))]
+    {
+        let args: Vec<_> = std::env::args_os().skip(1).collect();
+        if args.first().is_some_and(|arg| arg == "--manual-preview") {
+            if args.len() != 2 { eprintln!("新しい専用出力先を指定してください"); std::process::exit(2); }
+            if let Err(error) = settings_ui::manual_preview::run(std::path::Path::new(&args[1])) { eprintln!("{error}"); std::process::exit(1); }
+            return;
+        }
+    }
     #[cfg(windows)]
     {
         let args: Vec<_> = std::env::args_os().skip(1).collect();
