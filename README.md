@@ -11,25 +11,47 @@ VoiceMixer本体から独立したWin32アプリです。RVCモデルは初回�
 
 ## ダウンロード・インストール
 
-[GitHub Releases](https://github.com/KotorinChunChun/VoiceMixerMicRouter/releases/tag/v1.0.18)の `VoiceMixerMicRouter-1.0.18-setup.exe` を実行します。Windows 11 x64向けのユーザー単位インストーラです。Rustや.NETの事前導入は不要です。未署名の開発版として公開します。
+[GitHub Releases](https://github.com/KotorinChunChun/VoiceMixerMicRouter/releases)から対象版の `setup.exe` を実行します。Windows 11 x64向けのユーザー単位インストーラです。Rustや.NETの事前導入は不要です。未署名の開発版として公開します。
 
 初回は送信停止、RVC・全出力OFFで設定画面を開きます。設定を適用してから必要な出力を有効にしてください。[導入・更新・削除](docs/installation.md)、[KotorinToysへの登録引き継ぎ](docs/kotorintoys-integration.md)を参照してください。KotorinToys側の登録作業は管理PCで行います。
 
-## ソースからビルド
 
-Windows、Rust MSVCツールチェーン、Visual StudioのC++ビルドツール／Windows SDKが必要です。
+## 画面で見る使い方
 
-```powershell
-cd C:\develop\VoiceMixerMicRouter
-cargo build --manifest-path .\src\src-tauri\Cargo.toml --release --bin voicemixer-mic
-pwsh -File .\dev\scripts\Install-MicRouter.ps1 -SkipBuild -NoStartup -NoStart
-pwsh -File .\dev\scripts\Start-MicRouter.ps1 -Mode Settings
-```
+以下は1.0.32の設定画面です。入力・出力は撮影用の架空デバイスで、実際の音声を転送した結果ではありません。
 
-録音・再生デバイスが未導入でも初回設定画面を開けます。音声の送信には接続可能なデバイスが必要です。RVCには別途、利用許諾のあるモデルとCUDA対応のPython実行環境が必要です。モデル・CUDA／Pythonランタイム・個人設定はこのリポジトリに含みません。初回配備スクリプトは設定がない場合だけ既定設定を生成します。既存の環境を使う場合はmic-settings.jsonのplugin_directoryに配置済みpluginsフォルダーを指定できます。
+### 1. 入力と出力を選ぶ
 
-## ソースの由来
+起動時の設定画面、またはトレイから設定を開きます。「入力マイク」と出力先を選び、必要な出力だけを有効にします。オーバーレイ表示やログイン時のモードもここで指定します。「未選択の欄を表示」で省略された出力を選べます。
 
-2026-10-19にVoiceMixerの常駐v1.0.16から分離しました。共通音声Backendは外部の非公開リポジトリへ依存せず、本リポジトリ内で管理します。src/src-tauriという名前は既存の相対参照を維持するため残していますが、Tauri本体やWeb画面はビルドしません。不要な本体の実行バイナリ・フロントエンド・元のGit履歴は含みません。
+![入力・出力の基本設定](docs/images/readme/01-basic.png)
 
-RVC関連の上流ライセンスは[プラグイン内](plugins/rvc-cuda/RVC_LICENSE.txt)に保持します。モデルの入手・利用条件は各配布元で確認してください。
+### 2. 切替キーを決める
+
+「キー設定」で入力切替、出力切替、押している間ONなどのキーを選びます。「共有」は他アプリにもキーを渡し、「上書き」はこのアプリで扱うため、使い分けてください。
+
+![入力・出力のキー設定](docs/images/readme/02-keys.png)
+
+### 3. RVCを設定する
+
+「RVC設定」でモデル・Index・ピッチなどを指定します。モデルと実行環境は別途必要です。星印の項目を変更するとRVCの再起動が必要になります。
+
+![RVCモデルと音声変換条件](docs/images/readme/03-rvc.png)
+
+### 4. 切替時の効果音を選ぶ
+
+「効果音」で切替ごとの音と再生デバイスを選べます。配信先へ意図せず混ざらないよう、再生先を確認してください。
+
+![切替ごとの効果音](docs/images/readme/04-sounds.png)
+
+### 5. 適用結果を確認する
+
+出力名などを変更して「適用」を押し、画面下部の保存結果を確認します。撮影例では出力1を「配信先」に変更しました。「閉じる」で設定画面を閉じても、通常起動した常駐アプリは動作を続けます。
+
+![出力名の変更を適用した結果](docs/images/readme/05-applied.png)
+
+## 保存・停止
+
+設定とモデルは更新時も保持してください。音声を止めるには送信停止へ切り替え、常駐自体を終えるときはトレイから終了します。モデルの利用条件は各配布元を確認してください。
+
+詳しい操作は[利用方法](docs/mic-resident.md)、トラブル時の確認とビルドは[開発者ガイド](docs/DEVELOPERS_GUIDE.md)に分けています。
