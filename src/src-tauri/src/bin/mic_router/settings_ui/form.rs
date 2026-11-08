@@ -15,8 +15,8 @@ use super::{
         parameter_help, parameter_label, parameter_text, parameter_value_changed, parse_parameter,
     },
     Action, DeviceControl, ParameterControl, SettingsWindow, ACTIONS, CANCEL, CLASS, CLIENT_HEIGHT,
-    CLIENT_WIDTH, HOTKEY_BASE, RESET_BASIC, RESET_KEYS, RESET_RVC, RESET_SOUNDS, SAVE,
-    SHOW_UNSELECTED, TAB, WINDOW,
+    CLIENT_WIDTH, HOTKEY_BASE, RESET_BASIC, RESET_KEYS, RESET_RVC, RESET_SOUNDS, RVC_ENABLED,
+    RVC_PAGE, SAVE, SHOW_UNSELECTED, TAB, TAB_HEIGHT, TAB_TITLES, TAB_WIDTH, WINDOW,
 };
 use audio_mixer_backend::{
     plugins::{
@@ -32,7 +32,10 @@ use windows::{
         Foundation::{HWND, LPARAM, RECT, WPARAM},
         Graphics::Gdi::*,
         System::LibraryLoader::GetModuleHandleW,
-        UI::{Controls::*, Input::KeyboardAndMouse::EnableWindow, WindowsAndMessaging::*},
+        UI::{
+            Controls::*, Input::KeyboardAndMouse::EnableWindow, Shell::SetWindowSubclass,
+            WindowsAndMessaging::*,
+        },
     },
 };
 
@@ -123,6 +126,7 @@ impl SettingsWindow {
                 base: settings.clone(),
                 pages: std::array::from_fn(|_| Vec::new()),
                 tab: HWND::default(),
+                active_page: std::cell::Cell::new(0),
                 keys: vec![[HWND::default(); 7]; HOTKEY_COUNT],
                 devices: Vec::new(),
                 device_rows: std::array::from_fn(|_| Vec::new()),
@@ -143,7 +147,6 @@ impl SettingsWindow {
                 cancel: HWND::default(),
                 message: HWND::default(),
                 busy: false,
-                reset_rvc_button: HWND::default(),
                 rvc_reset: false,
             };
             s.icon = ui::mode_icon(mode)?;
@@ -167,7 +170,7 @@ impl SettingsWindow {
             s.tab = s.control(
                 "SysTabControl32",
                 "",
-                TCS_FIXEDWIDTH | WS_CLIPSIBLINGS.0,
+                TCS_FIXEDWIDTH | TCS_OWNERDRAWFIXED | WS_CLIPSIBLINGS.0,
                 TAB,
                 10,
                 16,
@@ -175,11 +178,16 @@ impl SettingsWindow {
                 600,
                 None,
             )?;
-            SendMessageW(s.tab, TCM_SETITEMSIZE, None, Some(LPARAM((32 << 16) | 145)));
-            for (index, title) in ["基本設定", "キー設定", "RVC設定", "効果音"]
-                .iter()
-                .enumerate()
-            {
+            if !SetWindowSubclass(s.tab, Some(super::tab_proc), 0, hwnd.0 as usize).as_bool() {
+                return Err("設定タブの操作を初期化できません".into());
+            }
+            SendMessageW(
+                s.tab,
+                TCM_SETITEMSIZE,
+                None,
+                Some(LPARAM(((TAB_HEIGHT << 16) | TAB_WIDTH) as isize)),
+            );
+            for (index, title) in TAB_TITLES.iter().enumerate() {
                 let mut label = wide(title);
                 let item = TCITEMW {
                     mask: TCIF_TEXT,
@@ -205,7 +213,7 @@ impl SettingsWindow {
                 .into_iter()
                 .enumerate()
             {
-                let button = s.control(
+                s.control(
                     "BUTTON",
                     "初期値に戻す",
                     BS_PUSHBUTTON as u32,
@@ -216,9 +224,6 @@ impl SettingsWindow {
                     30,
                     Some(page),
                 )?;
-                if id == RESET_RVC {
-                    s.reset_rvc_button = button;
-                }
             }
             s.refresh_rvc_controls();
             s.message = s.control("STATIC", "", 0, 400, 20, 624, CLIENT_WIDTH - 45, 22, None)?;
@@ -361,6 +366,16 @@ impl SettingsWindow {
             28,
             Some(0),
         )?;
+        self.rvc_enabled = self.checkbox(
+            "RVCを使用する",
+            settings.rvc_enabled,
+            20,
+            165,
+            210,
+            RVC_ENABLED,
+            0,
+        )?;
+        self.tip(self.rvc_enabled, "ONにするとRVC設定タブを開けます。OFFにするとRVC関連の操作を無効にします。稼働状態は「適用」で切り替わります。")?;
         for (i, (label, devices, id, name, enabled)) in [
             (
                 "入力マイク(原音/RVC)",
@@ -594,14 +609,10 @@ impl SettingsWindow {
         settings: &Settings,
         schema: Vec<ParameterDescriptor>,
     ) -> Result<(), String> {
-        self.rvc_enabled =
-            self.checkbox("RVCを使用する", settings.rvc_enabled, 20, 65, 210, 222, 2)?;
-        self.tip(self.rvc_enabled,
-            "OFFにするとRVCを停止し、MICと送信停止だけを使用します。設定値は保持します。ONに戻した後、RVCモードを選ぶとモデルの準備を開始します。適用するまで稼働状態は変わりません。")?;
         self.label(
             "＊の項目を変更するとRVCを再起動します。その他は起動中にも反映します。",
             20,
-            100,
+            65,
             800,
             28,
             2,
@@ -617,7 +628,7 @@ impl SettingsWindow {
             let value = settings.rvc_parameters.get(&p.id).unwrap_or(&p.default);
             let label = parameter_label(&p);
             let handle = if p.kind == ParameterKind::File {
-                let y = 135 + file_row * 42;
+                let y = 100 + file_row * 42;
                 file_row += 1;
                 let title = self.label(&label, 20, y, 180, 26, 2)?;
                 self.tip(title, &parameter_help(&p))?;
@@ -644,7 +655,7 @@ impl SettingsWindow {
                 )?
             } else {
                 let x = 20 + (other_row % 2) * 405;
-                let y = 225 + (other_row / 2) * 48;
+                let y = 190 + (other_row / 2) * 48;
                 other_row += 1;
                 if p.kind == ParameterKind::Boolean {
                     self.checkbox(
@@ -704,6 +715,17 @@ impl SettingsWindow {
         if index >= self.pages.len() {
             return;
         }
+        let index = if index == RVC_PAGE && !checked(self.rvc_enabled) {
+            let current = self.active_page.get();
+            if current == RVC_PAGE {
+                0
+            } else {
+                current
+            }
+        } else {
+            index
+        };
+        self.active_page.set(index);
         if let Some(tips) = &self.tips {
             tips.pop();
         }
@@ -901,6 +923,7 @@ impl SettingsWindow {
         for handle in self.outputs {
             set_checked(handle, false);
         }
+        set_checked(self.rvc_enabled, false);
         set_checked(
             self.noise,
             initial_rvc_parameters()[NOISE_PARAMETER]
@@ -926,9 +949,7 @@ impl SettingsWindow {
                 _ => set_text(parameter.handle, &parameter_text(value)),
             }
         }
-        set_checked(self.rvc_enabled, false);
         self.rvc_reset = true;
-        self.refresh_rvc_controls();
         self.message("RVC設定を初期値に戻しました。「適用」で反映します。");
     }
     fn reset_keys(&self) {
@@ -987,17 +1008,25 @@ impl SettingsWindow {
         }
     }
     fn refresh_rvc_controls(&self) {
-        let enabled = !self.busy && checked(self.rvc_enabled);
+        let available = checked(self.rvc_enabled);
+        let enabled = !self.busy && available;
+        if !available && self.active_page.get() == RVC_PAGE {
+            self.page(0);
+        }
         unsafe {
-            for control in &self.pages[2] {
-                let _ = EnableWindow(
-                    *control,
-                    if *control == self.rvc_enabled || *control == self.reset_rvc_button {
-                        !self.busy
-                    } else {
-                        enabled
-                    },
-                );
+            let mut rect = RECT::default();
+            if SendMessageW(
+                self.tab,
+                TCM_GETITEMRECT,
+                Some(WPARAM(RVC_PAGE)),
+                Some(LPARAM(&mut rect as *mut _ as isize)),
+            )
+            .0 != 0
+            {
+                let _ = InvalidateRect(Some(self.tab), Some(&rect), false);
+            }
+            for control in &self.pages[RVC_PAGE] {
+                let _ = EnableWindow(*control, enabled);
             }
             let _ = EnableWindow(self.noise, enabled);
             let _ = EnableWindow(self.devices[1].handle, enabled);
@@ -1158,7 +1187,7 @@ impl SettingsWindow {
                 .rvc_parameters
                 .get(&p.schema.id)
                 .unwrap_or(&p.schema.default);
-            if parameter_value_changed(&value, previous) {
+            if self.rvc_reset || parameter_value_changed(&value, previous) {
                 settings.rvc_parameters[&p.schema.id] = value;
             }
         }
@@ -1179,7 +1208,7 @@ impl SettingsWindow {
                 CANCEL => return Some(Action::Close),
                 RESET_BASIC => self.reset_basic(),
                 RESET_KEYS => self.reset_keys(),
-                RESET_RVC => self.reset_rvc(),
+                RESET_RVC if checked(self.rvc_enabled) => self.reset_rvc(),
                 RESET_SOUNDS => self.reset_sounds(),
                 SHOW_UNSELECTED => {
                     self.show_unselected = !self.show_unselected;
@@ -1205,7 +1234,7 @@ impl SettingsWindow {
                         endpoint,
                     ));
                 }
-                222 => self.refresh_rvc_controls(),
+                RVC_ENABLED => self.refresh_rvc_controls(),
                 260 => {
                     if let Err(error) = super::help::open_repository() {
                         self.message(&error);

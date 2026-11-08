@@ -298,14 +298,38 @@ fn settings_controls_roundtrip_and_page_layout() {
     let enabled =
         |h| unsafe { windows::Win32::UI::Input::KeyboardAndMouse::IsWindowEnabled(h) }.as_bool();
     set_checked(window.rvc_enabled, false);
-    ACTIONS.lock().unwrap().push(222);
+    ACTIONS.lock().unwrap().push(RVC_ENABLED);
     window.poll();
     assert!(enabled(window.rvc_enabled));
-    assert!(enabled(window.reset_rvc_button));
-    assert!(window.pages[2]
-        .iter()
-        .filter(|h| **h != window.rvc_enabled && **h != window.reset_rvc_button)
-        .all(|h| !enabled(*h)));
+    assert!(window.pages[0].contains(&window.rvc_enabled));
+    assert!(window.pages[RVC_PAGE].iter().all(|h| !enabled(*h)));
+    window.page(1);
+    window.page(RVC_PAGE);
+    assert_eq!(window.active_page.get(), 1);
+    unsafe {
+        let mut rect = RECT::default();
+        SendMessageW(
+            window.tab,
+            windows::Win32::UI::Controls::TCM_GETITEMRECT,
+            Some(WPARAM(RVC_PAGE)),
+            Some(LPARAM(&mut rect as *mut _ as isize)),
+        );
+        let position = LPARAM((((rect.top + 3) << 16) | (rect.left + 3)) as isize);
+        SendMessageW(window.tab, WM_LBUTTONDOWN, None, Some(position));
+        SendMessageW(window.tab, WM_LBUTTONUP, None, Some(position));
+        assert_eq!(SendMessageW(window.tab, TCM_GETCURSEL, None, None).0, 1);
+        SendMessageW(
+            window.tab,
+            WM_KEYDOWN,
+            Some(WPARAM(VK_RIGHT.0 as usize)),
+            None,
+        );
+    }
+    assert!(window.poll().is_none());
+    assert_eq!(window.active_page.get(), 3);
+    assert_eq!(next_page(3, true, false), 1);
+    assert_eq!(next_page(1, false, true), RVC_PAGE);
+    window.page(0);
     assert!(!enabled(window.noise));
     assert!(!enabled(window.devices[1].handle));
     for index in [1, 7, 8] {
@@ -318,7 +342,7 @@ fn settings_controls_roundtrip_and_page_layout() {
     window.busy(false);
     assert!(enabled(window.rvc_enabled) && !enabled(window.parameters[0].handle));
     set_checked(window.rvc_enabled, true);
-    ACTIONS.lock().unwrap().push(222);
+    ACTIONS.lock().unwrap().push(RVC_ENABLED);
     window.poll();
     assert!(window.parameters.iter().all(|p| enabled(p.handle)));
     for row in &window.keys {
@@ -848,6 +872,8 @@ fn settings_controls_roundtrip_and_page_layout() {
     let reset_basic = unsafe { GetDlgItem(Some(reopened.hwnd), RESET_BASIC as i32) }.unwrap();
     select(reopened.overlay, 0);
     select(reopened.sounds[0], 7);
+    set_checked(reopened.rvc_enabled, true);
+    ACTIONS.lock().unwrap().push(RVC_ENABLED);
     unsafe { SendMessageW(reset_basic, BM_CLICK, None, None) };
     assert!(reopened.poll().is_none());
     let basic = reopened.read().unwrap();
@@ -860,18 +886,22 @@ fn settings_controls_roundtrip_and_page_layout() {
     assert!(!basic.cable_enabled && !basic.voice_input_enabled && !basic.monitoring);
     assert_eq!(basic.output_labels, crate::config::default_output_labels());
     assert!(basic.noise_suppression());
+    assert!(!basic.rvc_enabled);
     assert_eq!(basic.rvc_parameters["pitch"], 17);
     assert_eq!(basic.switch_sounds[0], 7);
 
-    // RVCがOFFでもリセットを実行でき、適用用の値に初期設定が含まれる。
+    // RVCタブのリセットは基本設定の「RVCを使用する」を保つ。
+    set_checked(reopened.rvc_enabled, true);
+    ACTIONS.lock().unwrap().push(RVC_ENABLED);
+    assert!(reopened.poll().is_none());
     set_checked(reopened.noise, false);
-    reopened.page(2);
+    reopened.page(RVC_PAGE);
     let reset_rvc = unsafe { GetDlgItem(Some(reopened.hwnd), RESET_RVC as i32) }.unwrap();
     assert!(enabled(reset_rvc));
     unsafe { SendMessageW(reset_rvc, BM_CLICK, None, None) };
     assert!(reopened.poll().is_none());
     let rvc = reopened.read().unwrap();
-    assert!(!rvc.rvc_enabled);
+    assert!(rvc.rvc_enabled);
     assert_eq!(rvc.rvc_parameters["pitch"], 10.0);
     assert_eq!(rvc.rvc_parameters["model"], "models/KahoA.pth");
     assert_eq!(rvc.rvc_parameters["f0_method"], "rmvpe");
