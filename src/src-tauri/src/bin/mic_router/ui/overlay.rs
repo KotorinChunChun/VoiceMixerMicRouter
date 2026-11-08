@@ -104,11 +104,11 @@ const TELEMETRY_RECTS: [RECT; 3] = [
 const DISPLAY_RECT: RECT = RECT {
     left: 56,
     top: SETTINGS_TOP,
-    right: 202,
+    right: 184,
     bottom: SETTINGS_TOP + 21,
 };
 const OPEN_SETTINGS_RECT: RECT = RECT {
-    left: 368,
+    left: 320,
     top: SETTINGS_TOP,
     right: 448,
     bottom: SETTINGS_TOP + 21,
@@ -145,19 +145,30 @@ fn overlay_controls(
     holds: [bool; 3],
 ) -> Vec<OverlayControl> {
     let mut items = Vec::new();
+    let display_label = if display == OverlayMode::Brief {
+        "数秒"
+    } else {
+        display.label()
+    };
+    let noise_key = shortcut_badge(keys, NOISE);
+    let noise_label = match noise {
+        "RVCノイズ抑制 ON" => format!("RVCノイズ{noise_key} ON"),
+        "RVCノイズ抑制 OFF" => format!("RVCノイズ{noise_key} OFF"),
+        _ => format!("{noise}{noise_key}"),
+    };
     for (action, label, left, right, top) in [
         (
             OVERLAY,
-            format!("表示{}{}", shortcut_badge(keys, OVERLAY), display.label()),
-            56,
-            202,
+            format!("表示{}{display_label}", shortcut_badge(keys, OVERLAY)),
+            DISPLAY_RECT.left,
+            DISPLAY_RECT.right,
             SETTINGS_TOP,
         ),
         (
             NOISE,
-            format!("{noise}{}", shortcut_badge(keys, NOISE)),
-            206,
-            364,
+            noise_label,
+            188,
+            316,
             SETTINGS_TOP,
         ),
         (DIRECT, "MIC".into(), 56, 151, INPUT_TOP),

@@ -136,6 +136,10 @@ fn overlay_actions_match_drawn_cells_and_output_states() {
     assert_eq!(controls[8].text, "モニタ用[F11]ON");
     assert_eq!(controls[9].text, "設定");
     assert_eq!(controls[9].rect, OPEN_SETTINGS_RECT);
+    for (index, left) in [(0, 56), (1, 188), (9, 320)] {
+        assert_eq!(controls[index].rect.left, left);
+        assert_eq!(controls[index].rect.right, left + 128);
+    }
 
     let mut with_setting_key = keys.clone();
     with_setting_key[crate::actions::shortcut_index(SETTINGS).unwrap()] = "F24".into();
@@ -194,8 +198,8 @@ fn input_selection_outputs_and_click_gaps_stay_independent() {
                 (349, 353, 40),
                 (184, 188, 82),
                 (316, 320, 82),
-                (202, 206, 16),
-                (364, 368, 16),
+                (184, 188, 16),
+                (316, 320, 16),
             ] {
                 for x in left..right {
                     assert_eq!(control_at(&controls, x, y), None);
