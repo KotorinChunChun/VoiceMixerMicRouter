@@ -9,16 +9,14 @@
 | id | voice-mixer-mic-router |
 | name | VoiceMixerMicRouter |
 | appId | KotorinToys.VoiceMixerMicRouter |
-| version | 1.0.23 |
+| version | 1.0.31 |
 | installedExecutable | VoiceMixerMicRouter.exe |
 | repository | KotorinChunChun/VoiceMixerMicRouter |
-| tag | v1.0.23 |
-| installer | VoiceMixerMicRouter-1.0.23-setup.exe |
+| tag | v1.0.31 |
+| installer | VoiceMixerMicRouter-1.0.31-setup.exe |
 | 台帳 | VoiceMixerMicRouter-packages.json |
 
-Releaseの台帳のSHA-256と実ファイルを照合し、本体の固定ProductIdentityへ製品を追加します。mainのconfig/tools.jsonへ[自己完結した追加項目](kotorintoys-tool-entry.json)を追加します。開発登録はtool.jsonと独立Gitの採用コミットを使用します。configだけの追加では現在の本体の製品ホワイトリストを通過しないため、管理PCで本体をビルド・更新してください。
-
-ProductIdentityの追加値：new("voice-mixer-mic-router", "VoiceMixerMicRouter", "KotorinToys.VoiceMixerMicRouter")。固定配布先は製品名と同じVoiceMixerMicRouterです。
+VoiceMixerMicRouterはKotorinToysの公開一覧に登録済みです。対応する本体の「状態を更新」で公開版を確認し、「インストール」または「アップデート」から取得します。本体はGitHubの配布台帳・製品識別・SHA-256を照合して導入します。子ツールの版更新では、通常は本体の再登録や再ビルドは不要です。公開一覧の反映後に取得できます。
 
 本体の配布スクリプトは現在C#製品用の固定表を持つため、MicRouterの作成には独立側のdev/scripts/Build-Installer.ps1を使用してください。製品名だけを既存C#の発行対象へ追加してもRustはビルドされません。
 
