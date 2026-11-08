@@ -430,6 +430,22 @@ fn settings_controls_roundtrip_and_page_layout() {
                 ));
             }
         }
+        for (row, label) in ["入力マイク(原音/RVC)", "入力スピーカー(RVC)"]
+            .into_iter()
+            .enumerate()
+        {
+            let handle = window.device_rows[row][0];
+            assert_eq!(text(handle), label);
+            let mut size = SIZE::default();
+            let chars: Vec<u16> = label.encode_utf16().collect();
+            assert!(GetTextExtentPoint32W(dc, &chars, &mut size).as_bool());
+            let mut rect = RECT::default();
+            GetClientRect(handle, &mut rect).unwrap();
+            assert!(
+                size.cx <= rect.right - rect.left,
+                "{label} が欄に収まりません"
+            );
+        }
         SelectObject(dc, old_font);
         ReleaseDC(Some(window.hwnd), dc);
         assert!(narrow.is_empty(), "{narrow:?}");

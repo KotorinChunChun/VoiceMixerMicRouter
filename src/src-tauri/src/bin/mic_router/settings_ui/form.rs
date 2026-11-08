@@ -366,14 +366,14 @@ impl SettingsWindow {
         )?;
         for (i, (label, devices, id, name, enabled)) in [
             (
-                "入力マイク",
+                "入力マイク(原音/RVC)",
                 inputs,
                 &settings.microphone_id,
                 &settings.microphone_name,
                 None,
             ),
             (
-                "入力スピーカー",
+                "入力スピーカー(RVC)",
                 outputs,
                 &settings.speaker_id,
                 &settings.speaker_name,
