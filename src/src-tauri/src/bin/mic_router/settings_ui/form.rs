@@ -502,17 +502,19 @@ impl SettingsWindow {
             .chain((1..=24).map(|n| format!("F{n}")))
             .collect();
         let modifier_choices = ["不要", "左", "右", "左|右", "左&右"].map(str::to_owned);
+        let combo_width = 100;
+        let column_x = |column| 292 + column * (combo_width + 6);
         let modifier_columns = [
-            (2, "Ctrl", 292, 104),
-            (1, "Shift", 400, 104),
-            (4, "Alt", 508, 96),
-            (3, "Windows", 608, 136),
+            (2, "Ctrl", column_x(0)),
+            (1, "Shift", column_x(1)),
+            (4, "Alt", column_x(2)),
+            (3, "Windows", column_x(3)),
         ];
-        for (_, label, x, width) in modifier_columns {
-            self.label(label, x, 54, width, 21, 1)?;
+        for (_, label, x) in modifier_columns {
+            self.label(label, x, 54, combo_width, 21, 1)?;
         }
-        self.label("キー", 750, 54, 75, 21, 1)?;
-        self.label("モード", 830, 54, 95, 21, 1)?;
+        self.label("キー", column_x(4), 54, combo_width, 21, 1)?;
+        self.label("モード", column_x(5), 54, combo_width, 21, 1)?;
         for (row, &i) in display_order().iter().enumerate() {
             // 表示順とタブ移動順を揃え、保存時には従来の添字を維持する。
             let y = 78
@@ -539,7 +541,7 @@ impl SettingsWindow {
             // 列IDと保存順は維持し、修飾キーの表示順だけCtrl、Shift、Alt、Windowsにする。
             controls[0] =
                 self.checkbox("有効", k.is_assigned(), 235, y, 55, HOTKEY_BASE + i * 10, 1)?;
-            for ((j, _, x, width), (on, side)) in modifier_columns.into_iter().zip([
+            for ((j, _, x), (on, side)) in modifier_columns.into_iter().zip([
                 (k.ctrl, k.ctrl_side),
                 (k.shift, k.shift_side),
                 (k.alt, k.alt_side),
@@ -552,7 +554,7 @@ impl SettingsWindow {
                     false,
                     x,
                     y,
-                    width,
+                    combo_width,
                     HOTKEY_BASE + i * 10 + j,
                     1,
                 )?;
@@ -565,9 +567,9 @@ impl SettingsWindow {
                 &key_choices,
                 primary_key_label(k),
                 false,
-                750,
+                column_x(4),
                 y,
-                75,
+                combo_width,
                 HOTKEY_BASE + 5 + i * 10,
                 1,
             )?;
@@ -575,9 +577,9 @@ impl SettingsWindow {
                 &KeyHandling::ALL.map(|mode| mode.label().into()),
                 k.handling.label(),
                 false,
-                830,
+                column_x(5),
                 y,
-                95,
+                combo_width,
                 HOTKEY_BASE + 6 + i * 10,
                 1,
             )?;

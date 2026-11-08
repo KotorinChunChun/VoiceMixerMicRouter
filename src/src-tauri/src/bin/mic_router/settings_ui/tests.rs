@@ -411,6 +411,8 @@ fn settings_controls_roundtrip_and_page_layout() {
         let dc = GetDC(Some(window.hwnd));
         let old_font = SelectObject(dc, window.font.into());
         let mut narrow = Vec::new();
+        let mut first_cell = RECT::default();
+        GetWindowRect(window.keys[0][2], &mut first_cell).unwrap();
         for (column, heading) in [
             (2, "Ctrl"),
             (1, "Shift"),
@@ -431,6 +433,12 @@ fn settings_controls_roundtrip_and_page_layout() {
             GetWindowRect(combo, &mut cell).unwrap();
             assert_eq!(title.left, cell.left);
             assert!(title.bottom <= cell.top);
+            for row in &window.keys {
+                let mut rect = RECT::default();
+                GetWindowRect(row[column], &mut rect).unwrap();
+                assert_eq!(rect.right - rect.left, first_cell.right - first_cell.left);
+                assert_eq!(rect.bottom - rect.top, first_cell.bottom - first_cell.top);
+            }
             if column >= 5 {
                 continue;
             }
