@@ -13,6 +13,9 @@ mod engine;
 #[path = "mic_router/hotkeys.rs"]
 mod hotkeys;
 #[cfg(windows)]
+#[path = "mic_router/isolated_cli.rs"]
+mod isolated_cli;
+#[cfg(windows)]
 #[path = "mic_router/management.rs"]
 mod management;
 #[cfg(windows)]
@@ -37,6 +40,13 @@ mod ui;
 mod window_title;
 
 fn main() {
+    #[cfg(windows)]
+    {
+        let args: Vec<_> = std::env::args_os().skip(1).collect();
+        if args.iter().any(|arg| arg == "--test-scenario") {
+            std::process::exit(isolated_cli::run(&args));
+        }
+    }
     if let Err(error) = cli::run() {
         eprintln!("{error}");
         #[cfg(windows)]

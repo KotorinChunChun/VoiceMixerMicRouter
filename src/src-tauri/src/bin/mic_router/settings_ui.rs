@@ -36,7 +36,7 @@ mod form;
 #[path = "settings_ui/help.rs"]
 mod help;
 #[path = "settings_ui/parameters.rs"]
-mod parameters;
+pub(crate) mod parameters;
 #[cfg(test)]
 #[path = "settings_ui/tests.rs"]
 mod tests;

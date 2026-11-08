@@ -20,13 +20,14 @@ pub use hotkey::{default_hotkeys, Hotkey, KeyHandling, ModifierSide};
 pub use project::{OUTPUT_SELECTOR, SOURCE_SELECTOR, VOICE_INPUT_OUTPUT};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 pub use storage::write_json;
 pub const NOISE_PARAMETER: &str = "transient_noise_suppression";
 /// 常駐ツール固有の版。本体Cargoパッケージとは独立して更新する。
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const APP_NAME: &str = "VoiceMixerMicRouter";
 pub const UNSELECTED: &str = "未選択";
+pub(crate) const BRIEF_DURATION: Duration = Duration::from_secs(4);
 pub fn initial_rvc_parameters() -> Value {
     json!({
         "model": "models/KahoA.pth", "index": "models/Kaho.index", "pitch": 10.0,
@@ -67,6 +68,14 @@ impl Mode {
             Self::Muted => "送信停止",
         }
     }
+    pub fn sound_index(self) -> usize {
+        match self {
+            Self::Direct => 0,
+            Self::Rvc => 1,
+            Self::SpeakerRvc => 2,
+            Self::Muted => 3,
+        }
+    }
     pub fn other(self) -> Self {
         match self {
             Self::Direct => Self::Rvc,
@@ -94,6 +103,13 @@ impl OverlayMode {
             Self::Brief => "数秒表示",
             Self::Always => "常時表示",
         }
+    }
+    pub fn visible_after(self, elapsed: Duration) -> bool {
+        self == Self::Always || (self == Self::Brief && elapsed < BRIEF_DURATION)
+    }
+    pub fn brief_remaining(self, elapsed: Duration) -> Option<u8> {
+        (self == Self::Brief && self.visible_after(elapsed))
+            .then(|| (BRIEF_DURATION.as_secs() - elapsed.as_secs()) as u8)
     }
     pub fn next(self) -> Self {
         match self {
@@ -214,6 +230,40 @@ impl DeviceSelection {
     }
 }
 impl Settings {
+    pub fn reset_basic(&mut self) {
+        self.overlay_mode = OverlayMode::default();
+        self.startup_mode = None;
+        self.rvc_enabled = false;
+        self.output_labels = default_output_labels();
+        (self.microphone_id, self.microphone_name) = (default_console_id(), default_console_name());
+        (self.speaker_id, self.speaker_name) = (default_console_id(), default_console_name());
+        (self.cable_id, self.cable_name) = (default_console_id(), default_console_name());
+        (self.voice_input_id, self.voice_input_name) = (String::new(), UNSELECTED.into());
+        (self.monitor_id, self.monitor_name) = (String::new(), UNSELECTED.into());
+        self.cable_enabled = false;
+        self.voice_input_enabled = false;
+        self.monitoring = false;
+        self.rvc_parameters[NOISE_PARAMETER] = initial_rvc_parameters()[NOISE_PARAMETER].clone();
+    }
+
+    pub fn reset_sounds(&mut self) {
+        self.switch_sounds = default_switch_sounds();
+        self.sound_device_id = default_console_id();
+        self.sound_device_name = default_console_name();
+    }
+
+    pub fn output_flags(&self) -> [bool; 3] {
+        [self.cable_enabled, self.voice_input_enabled, self.monitoring]
+    }
+    pub fn toggle_output(&mut self, index: usize) {
+        let flag = match index {
+            0 => &mut self.cable_enabled,
+            1 => &mut self.voice_input_enabled,
+            2 => &mut self.monitoring,
+            _ => unreachable!("出力番号は事前に検証する"),
+        };
+        *flag = !*flag;
+    }
     pub fn device_selection(&self) -> DeviceSelection {
         DeviceSelection {
             microphone: !self.microphone_id.is_empty(),

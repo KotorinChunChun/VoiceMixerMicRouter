@@ -54,7 +54,7 @@ fn resolve_render(id: &str) -> Result<String, String> {
 pub(super) fn validate_speaker_route(settings: &Settings, mode: Mode) -> Result<(), String> {
     validate_speaker_route_with(settings, mode, resolve_render)
 }
-pub(super) fn validate_speaker_route_with(
+pub(crate) fn validate_speaker_route_with(
     settings: &Settings,
     mode: Mode,
     mut resolve: impl FnMut(&str) -> Result<String, String>,

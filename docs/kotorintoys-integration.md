@@ -9,11 +9,11 @@
 | id | voice-mixer-mic-router |
 | name | VoiceMixerMicRouter |
 | appId | KotorinToys.VoiceMixerMicRouter |
-| version | 1.0.31 |
+| version | 1.0.32 |
 | installedExecutable | VoiceMixerMicRouter.exe |
 | repository | KotorinChunChun/VoiceMixerMicRouter |
-| tag | v1.0.31 |
-| installer | VoiceMixerMicRouter-1.0.31-setup.exe |
+| tag | v1.0.32 |
+| installer | VoiceMixerMicRouter-1.0.32-setup.exe |
 | 台帳 | VoiceMixerMicRouter-packages.json |
 
 VoiceMixerMicRouterはKotorinToysの公開一覧に登録済みです。対応する本体の「状態を更新」で公開版を確認し、「インストール」または「アップデート」から取得します。本体はGitHubの配布台帳・製品識別・SHA-256を照合して導入します。子ツールの版更新では、通常は本体の再登録や再ビルドは不要です。公開一覧の反映後に取得できます。

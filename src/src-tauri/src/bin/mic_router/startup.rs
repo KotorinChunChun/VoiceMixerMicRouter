@@ -14,10 +14,7 @@ pub fn initialize(path: &Path, plugins: &Path) -> Result<bool, String> {
         return Ok(false);
     }
     let mut settings = Settings::initial_settings(plugins)?;
-    settings.rvc_enabled = false;
-    settings.cable_enabled = false;
-    settings.voice_input_enabled = false;
-    settings.monitoring = false;
+    settings.reset_basic();
     settings.last_mode = Mode::Muted;
     settings.save(path)?;
     Ok(true)

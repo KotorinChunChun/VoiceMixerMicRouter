@@ -35,6 +35,39 @@ cargo test --manifest-path .\src\src-tauri\Cargo.toml --bin voicemixer-mic nativ
 
 音声試験のignoreは環境条件を確認して対象だけ解除します。--ignoredのみで全試験を走らせないでください。モデル、OS既定変更、録音等の追加条件は各テストに記載します。
 
+## 常駐と分離したCLI試験
+
+Windowsでは `--test-scenario FILE` で、JSONに記述した操作を順番に実行できます。通常の常駐を起動したまま実行できます。試験ごとに初期値から始まり、常駐ウィンドウや管理パイプ、利用者の設定、実デバイスに接続しません。操作結果は標準出力にUTF-8のJSONで1件返します。
+
+```powershell
+$report = & .\src\src-tauri\target\debug\voicemixer-mic.exe --test-scenario `
+    .\dev\scripts\tests\fixtures\isolated-cli.json | ConvertFrom-Json
+$report.steps | Select-Object step, op, ok
+```
+
+入力は1 MiB以下のUTF-8 JSONです。`schema_version` に1、`steps` に1〜256件の操作を指定します。[シナリオ例](../dev/scripts/tests/fixtures/isolated-cli.json)は設定適用、RVC無効時の起動、出力3系統の切替と同時押下、効果音、オーバーレイ、4タブのリセットを検証します。
+
+| 操作 | 入力と確認できる内容 |
+|---|---|
+| `inspect` | `detail.applied` と `detail.draft` に適用済みと編集中の設定を出す |
+| `settings_patch` | `values` に変更する設定キーと値を指定する。デバイスは仮のIDを使用できる。 `rvc_parameters` は指定したキーだけを更新する |
+| `settings_key` | `row` に `inspect` の `hotkeys` の保存順を1〜14で指定し、`binding` に1行分のキー設定を指定する |
+| `settings_reset` | `tab` に `basic`、`keys`、`rvc`、`sounds` のいずれかを指定し、該当タブの下書きを初期値に戻す |
+| `settings_apply` / `restart` | 下書きの検証と適用、または適用済み設定のJSONからの復元と起動モード判定。再起動時に下書きと押下状態を解放する |
+| `mode` / `toggle_mode` / `release_rvc` / `toggle_noise` | モード切替、RVC解放、短いノイズ抑制の設定。 `mode` の値は `direct`、`rvc`、`speaker_rvc`、`muted` |
+| `output_toggle` / `output_hold` | `output` に1〜3、押下操作では `pressed` に真偽値を指定する。通常・押下・実効出力をそれぞれ `state.outputs` で確認できる |
+| `sound_preview` | `choice` に0〜7を指定する。効果音の波形を生成し、フレーム数、ピーク、試聴の出力先を報告する |
+| `overlay_cycle` / `overlay_show` / `overlay_elapse` | 表示モード切替、再表示、経過時間の模擬。経過時間は `milliseconds` で進め、表示状態と残り秒数を確認する |
+
+各操作は `ok` と操作後の `state` を返します。操作が失敗した場合は `error` に理由を出し、後続操作も実行します。終了コードは全件成功が0、操作の失敗ありは1、入力JSON・引数など試験開始前の失敗は2です。 `--config` や `--stop` などの通常の引数とは併用できません。
+
+設定の検証、音声経路の生成、効果音の波形、オーバーレイの表示条件を確認します。Windowsのキー入力・実画面、音声の入出力と試聴、実デバイスの接続やRVCモデルの推論は、対応するGUI試験や実機診断で確認します。
+
+配布候補EXEのJSON出力と終了コードを検査するには、`Test-IsolatedCli.ps1` に対象EXEを指定します。 `-ProtectedSettings` を指定すると、試験前後でそのファイルのハッシュも照合します。
+
+```powershell
+.\dev\scripts\tests\Test-IsolatedCli.ps1 -Executable .\src\src-tauri\target\debug\voicemixer-mic.exe
+```
 ## 公開インストーラ（v1.0.18）
 
 .NET 10 SDKと上記Rust環境で実行します。実行時の.NET追加導入は不要です。Inno Setupは署名・固定SHA256検証後、artifacts内へローカル配置します。

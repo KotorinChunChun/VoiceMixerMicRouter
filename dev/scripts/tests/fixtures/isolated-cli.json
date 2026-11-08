@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "steps": [
+    {
+      "op": "inspect"
+    },
+    {
+      "op": "settings_patch",
+      "values": {
+        "output_labels": [
+          "試験1",
+          "試験2",
+          "試験3"
+        ],
+        "voice_input_id": "fixture-output-2",
+        "voice_input_name": "試験出力2",
+        "monitor_id": "fixture-output-3",
+        "monitor_name": "試験出力3",
+        "startup_mode": "speaker_rvc",
+        "rvc_parameters": {
+          "pitch": 3
+        },
+        "switch_sounds": [
+          1,
+          2,
+          3,
+          4,
+          7,
+          6,
+          5
+        ],
+        "sound_device_id": "fixture-render"
+      }
+    },
+    {
+      "op": "sound_preview",
+      "choice": 7
+    },
+    {
+      "binding": {
+        "key": "F4",
+        "handling": "override",
+        "enabled": true,
+        "shift": false,
+        "ctrl": false,
+        "win": false,
+        "alt": false
+      },
+      "row": 3,
+      "op": "settings_key"
+    },
+    {
+      "op": "settings_apply"
+    },
+    {
+      "op": "restart"
+    },
+    {
+      "op": "mode",
+      "mode": "direct"
+    },
+    {
+      "op": "output_toggle",
+      "output": 1
+    },
+    {
+      "op": "output_hold",
+      "output": 2,
+      "pressed": true
+    },
+    {
+      "op": "output_hold",
+      "output": 3,
+      "pressed": true
+    },
+    {
+      "op": "output_hold",
+      "output": 2,
+      "pressed": false
+    },
+    {
+      "op": "output_hold",
+      "output": 3,
+      "pressed": false
+    },
+    {
+      "op": "output_toggle",
+      "output": 2
+    },
+    {
+      "op": "output_toggle",
+      "output": 3
+    },
+    {
+      "op": "overlay_cycle"
+    },
+    {
+      "op": "overlay_cycle"
+    },
+    {
+      "op": "overlay_elapse",
+      "milliseconds": 3999
+    },
+    {
+      "op": "overlay_elapse",
+      "milliseconds": 1
+    },
+    {
+      "op": "overlay_show"
+    },
+    {
+      "op": "overlay_cycle"
+    },
+    {
+      "op": "settings_patch",
+      "values": {
+        "rvc_enabled": true
+      }
+    },
+    {
+      "op": "settings_apply"
+    },
+    {
+      "op": "toggle_mode"
+    },
+    {
+      "op": "output_toggle",
+      "output": 1
+    },
+    {
+      "op": "mode",
+      "mode": "speaker_rvc"
+    },
+    {
+      "op": "toggle_noise"
+    },
+    {
+      "op": "release_rvc"
+    },
+    {
+      "op": "mode",
+      "mode": "muted"
+    },
+    {
+      "op": "settings_reset",
+      "tab": "basic"
+    },
+    {
+      "op": "settings_reset",
+      "tab": "keys"
+    },
+    {
+      "op": "settings_reset",
+      "tab": "rvc"
+    },
+    {
+      "op": "settings_reset",
+      "tab": "sounds"
+    },
+    {
+      "op": "inspect"
+    },
+    {
+      "op": "settings_apply"
+    },
+    {
+      "op": "inspect"
+    }
+  ]
+}

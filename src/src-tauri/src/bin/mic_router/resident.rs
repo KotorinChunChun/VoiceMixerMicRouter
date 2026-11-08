@@ -331,12 +331,7 @@ pub fn run(
                             })
                             .map_err(|e| e.to_string())?;
                         if !matches!(action, ui::RETRY | ui::RELEASE_RVC) {
-                            let index = match desired {
-                                Mode::Direct => 0,
-                                Mode::Rvc => 1,
-                                Mode::SpeakerRvc => 2,
-                                Mode::Muted => 3,
-                            };
+                            let index = desired.sound_index();
                             commands
                                 .send(engine::Command::Sound(
                                     settings.switch_sounds[index],
@@ -369,14 +364,12 @@ pub fn run(
                     ui::OUTPUT1 | ui::OUTPUT2 | ui::MONITOR | ui::NOISE => {
                         let mut candidate = settings.clone();
                         match action {
-                            ui::OUTPUT1 => candidate.cable_enabled = !candidate.cable_enabled,
-                            ui::OUTPUT2 => {
-                                candidate.voice_input_enabled = !candidate.voice_input_enabled
-                            }
+                            ui::OUTPUT1 => candidate.toggle_output(0),
+                            ui::OUTPUT2 => candidate.toggle_output(1),
                             ui::NOISE => {
                                 candidate.set_noise_suppression(!candidate.noise_suppression())
                             }
-                            _ => candidate.monitoring = !candidate.monitoring,
+                            _ => candidate.toggle_output(2),
                         }
                         match candidate.save(&path) {
                             Ok(()) => {

@@ -6,6 +6,8 @@ mod routing;
 mod session;
 
 pub use routing::select_graph;
+#[cfg(windows)]
+pub(crate) use routing::validate_speaker_route_with;
 pub use session::spawn;
 
 use super::config::{write_json, Mode, Settings};

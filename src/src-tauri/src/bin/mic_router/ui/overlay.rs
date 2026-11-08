@@ -1,5 +1,7 @@
 //! モード表示ウィンドウ。描画状態・クリック/ドラッグ・表示期限を所有する。
 use super::super::config::{Mode, OverlayMode, HOTKEY_COUNT};
+#[cfg(test)]
+use crate::config::BRIEF_DURATION;
 use super::super::telemetry::{self, Snapshot};
 use super::drawing::{draw_frame, paint_buffered};
 use super::{
@@ -72,7 +74,7 @@ pub(super) struct OverlayControl {
     pub(super) enabled: bool,
     pub(super) status: String,
 }
-const BRIEF_DURATION: Duration = Duration::from_secs(4);
+
 // 遅延表示とIN/OUTの描画範囲。状態・入力・出力の各ボタンを含めない。
 #[cfg(test)]
 const TELEMETRY_RECT: RECT = RECT {
@@ -288,12 +290,11 @@ pub(super) fn input_status(active: bool, phase: &str) -> &'static str {
 }
 
 fn brief_remaining(display: OverlayMode, elapsed: Duration) -> Option<u8> {
-    (display == OverlayMode::Brief && elapsed < BRIEF_DURATION)
-        .then(|| (BRIEF_DURATION.as_secs() - elapsed.as_secs()) as u8)
+    display.brief_remaining(elapsed)
 }
 
 fn overlay_expired(display: OverlayMode, elapsed: Duration) -> bool {
-    display == OverlayMode::Off || (display == OverlayMode::Brief && elapsed >= BRIEF_DURATION)
+    !display.visible_after(elapsed)
 }
 
 fn overlay_action_allowed_with(action: usize, locked: bool, allow_mode_escape: bool) -> bool {

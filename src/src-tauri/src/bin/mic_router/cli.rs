@@ -125,7 +125,7 @@ pub fn run() -> Result<(), String> {
             return Ok(());
         }
         Invocation::Help => {
-            println!("VoiceMixerMicRouter\n--config FILE\n--init PLUGINS_DIR: 設定を新規生成\n--mode direct|rvc|speaker_rvc|muted: 指定モードで起動／常駐中なら切替\n--toggle: 常駐中のモードを切替\n--stop: 常駐を終了\n--settings: 設定画面を開く（未起動なら起動）\n--release-rvc: RVCを終了してMICへ切替\n--status: 最新の状態JSON\n--check direct|rvc|speaker_rvc|muted: 10秒間の実デバイス診断（常駐停止時のみ）\n引数なし: 前回モードで常駐");
+            println!("VoiceMixerMicRouter\n--test-scenario FILE: 常駐と分離したJSONシナリオ試験（Windows）\n--config FILE\n--init PLUGINS_DIR: 設定を新規生成\n--mode direct|rvc|speaker_rvc|muted: 指定モードで起動／常駐中なら切替\n--toggle: 常駐中のモードを切替\n--stop: 常駐を終了\n--settings: 設定画面を開く（未起動なら起動）\n--release-rvc: RVCを終了してMICへ切替\n--status: 最新の状態JSON\n--check direct|rvc|speaker_rvc|muted: 10秒間の実デバイス診断（常駐停止時のみ）\n引数なし: 前回モードで常駐");
             return Ok(());
         }
         Invocation::Run(options) => options,

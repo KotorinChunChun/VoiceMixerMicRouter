@@ -9,10 +9,16 @@ use audio_mixer_backend::windows::devices::{
 };
 use serde::Serialize;
 use serde_json::{json, Value};
-use std::{fs, path::Path};
+use std::{fs, path::{Path, PathBuf}};
 impl Settings {
     pub fn initial_settings(plugin_directory: &Path) -> Result<Self, String> {
-        Ok(Self {
+        Ok(Self::defaults(
+            fs::canonicalize(plugin_directory).map_err(|e| e.to_string())?,
+        ))
+    }
+
+    pub fn defaults(plugin_directory: PathBuf) -> Self {
+        Self {
             device_selection_revision: 1,
             hotkey_defaults_revision: 1,
             rvc_enabled: true,
@@ -30,7 +36,7 @@ impl Settings {
             voice_input_id: String::new(),
             voice_input_name: UNSELECTED.into(),
             voice_input_enabled: false,
-            plugin_directory: fs::canonicalize(plugin_directory).map_err(|e| e.to_string())?,
+            plugin_directory,
             rvc_parameters: super::initial_rvc_parameters(),
             last_mode: Mode::Direct,
             startup_mode: None,
@@ -40,7 +46,7 @@ impl Settings {
             monitoring: false,
             monitor_id: String::new(),
             monitor_name: UNSELECTED.into(),
-        })
+        }
     }
     pub fn load(path: &Path) -> Result<Self, String> {
         let mut source: Value = serde_json::from_slice(

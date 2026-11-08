@@ -15,7 +15,7 @@ use std::{
 pub const LABELS: [&str; 8] = ["なし", "音1", "音2", "音3", "音4", "音5", "音6", "音7"];
 const FREQUENCIES: [f32; 7] = [440., 523.25, 587.33, 659.25, 739.99, 830.61, 987.77];
 
-fn samples(choice: u8) -> Vec<f32> {
+pub(crate) fn samples(choice: u8) -> Vec<f32> {
     let Some(frequency) = choice
         .checked_sub(1)
         .and_then(|i| FREQUENCIES.get(i as usize))

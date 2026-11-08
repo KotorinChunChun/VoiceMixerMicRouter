@@ -1,7 +1,7 @@
 //! 基本設定とRVC設定の構築・読み取り・操作。
 use super::super::{
     config::{
-        default_hotkeys, default_output_labels, default_switch_sounds, device_choices,
+        default_hotkeys, device_choices,
         initial_rvc_parameters, is_default_device, DeviceSelection, Hotkey, KeyHandling, Mode,
         ModifierSide, OverlayMode, Settings, HOTKEY_COUNT, HOTKEY_LABELS, NOISE_PARAMETER,
         UNSELECTED,
@@ -23,7 +23,7 @@ use audio_mixer_backend::{
         manifest::{ParameterDescriptor, ParameterKind},
         package::load_package_manifest,
     },
-    windows::devices::{list_devices, AudioDeviceInfo, DeviceDirection, DEFAULT_CONSOLE_ENDPOINT},
+    windows::devices::{list_devices, AudioDeviceInfo, DeviceDirection},
 };
 use std::sync::atomic::Ordering;
 use windows::{
@@ -920,14 +920,16 @@ impl SettingsWindow {
         });
     }
     fn reset_basic(&mut self) {
-        select_label(self.overlay, OverlayMode::default().label());
+        let mut defaults = self.base.clone();
+        defaults.reset_basic();
+        select_label(self.overlay, defaults.overlay_mode.label());
         select(self.startup, 0);
         for (device, id) in self.devices.iter().zip([
-            DEFAULT_CONSOLE_ENDPOINT,
-            DEFAULT_CONSOLE_ENDPOINT,
-            DEFAULT_CONSOLE_ENDPOINT,
-            "",
-            "",
+            &defaults.microphone_id,
+            &defaults.speaker_id,
+            &defaults.cable_id,
+            &defaults.voice_input_id,
+            &defaults.monitor_id,
         ]) {
             if let Some(index) = device
                 .devices
@@ -937,19 +939,14 @@ impl SettingsWindow {
                 select(device.handle, index);
             }
         }
-        for (handle, label) in self.output_labels.into_iter().zip(default_output_labels()) {
-            set_text(handle, &label);
+        for (handle, label) in self.output_labels.into_iter().zip(&defaults.output_labels) {
+            set_text(handle, label);
         }
         for handle in self.outputs {
             set_checked(handle, false);
         }
-        set_checked(self.rvc_enabled, false);
-        set_checked(
-            self.noise,
-            initial_rvc_parameters()[NOISE_PARAMETER]
-                .as_bool()
-                .unwrap_or_default(),
-        );
+        set_checked(self.rvc_enabled, defaults.rvc_enabled);
+        set_checked(self.noise, defaults.noise_suppression());
         self.refresh_startup_modes();
         self.refresh_rvc_controls();
         self.layout_device_rows();
@@ -986,14 +983,16 @@ impl SettingsWindow {
         self.message("キー設定を初期値に戻しました。「適用」で反映します。");
     }
     fn reset_sounds(&self) {
-        for (handle, sound) in self.sounds.into_iter().zip(default_switch_sounds()) {
+        let mut defaults = self.base.clone();
+        defaults.reset_sounds();
+        for (handle, sound) in self.sounds.into_iter().zip(defaults.switch_sounds) {
             select(handle, usize::from(sound));
         }
         if let Some(device) = &self.sound_device {
             if let Some(index) = device
                 .devices
                 .iter()
-                .position(|(id, _)| id == DEFAULT_CONSOLE_ENDPOINT)
+                .position(|(id, _)| id == &defaults.sound_device_id)
             {
                 select(device.handle, index);
             }

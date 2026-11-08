@@ -15,7 +15,7 @@ pub(super) fn parameter_label(p: &ParameterDescriptor) -> String {
     )
 }
 
-pub(super) fn parameter_text(value: &Value) -> String {
+pub(crate) fn parameter_text(value: &Value) -> String {
     value
         .as_str()
         .map(str::to_owned)
@@ -27,7 +27,7 @@ pub(super) fn parameter_value_changed(value: &Value, previous: &Value) -> bool {
         && !(value.is_number() && previous.is_number() && value.as_f64() == previous.as_f64())
 }
 
-pub(super) fn parse_parameter(
+pub(crate) fn parse_parameter(
     p: &ParameterDescriptor,
     text: &str,
     on: bool,
