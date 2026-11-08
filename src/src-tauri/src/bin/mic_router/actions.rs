@@ -26,6 +26,10 @@ pub fn ptt_event(command: usize) -> Option<(usize, bool)> {
 }
 pub const SHOW: usize = 102;
 
+pub fn requires_rvc(command: usize) -> bool {
+    matches!(command, RVC | SPK_RVC | TOGGLE | NOISE | RELEASE_RVC)
+}
+
 pub struct ShortcutDefinition {
     pub command: usize,
     pub label: &'static str,

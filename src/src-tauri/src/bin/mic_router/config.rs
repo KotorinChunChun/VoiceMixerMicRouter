@@ -222,7 +222,14 @@ impl Settings {
                 .map(|id| !id.is_empty()),
         }
     }
-    /// RVCを停止している間も保存済みの起動モード・キー割当は保持する。
+    pub fn effective_startup_mode(&self, initial: Option<Mode>) -> Mode {
+        let requested = initial.or(self.startup_mode).unwrap_or(self.last_mode);
+        if !self.rvc_enabled && requested.is_rvc() {
+            Mode::Muted
+        } else {
+            self.available_mode(requested)
+        }
+    }
     pub fn available_mode(&self, mode: Mode) -> Mode {
         let devices = self.device_selection();
         if !devices.has_source(mode) {

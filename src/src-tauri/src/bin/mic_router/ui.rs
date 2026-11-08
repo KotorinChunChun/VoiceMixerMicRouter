@@ -2,7 +2,7 @@
 use super::config::{Hotkey, Mode, OverlayMode, HOTKEY_COUNT};
 use super::hotkeys::RemoteHotkeys;
 use super::telemetry::Snapshot;
-use crate::actions::{shortcut_badge, shortcut_index, HOTKEY_COMMANDS};
+use crate::actions::{requires_rvc, shortcut_badge, shortcut_index, HOTKEY_COMMANDS};
 pub use crate::actions::{
     DIRECT, EXIT, MONITOR, MUTED, NOISE, OUTPUT1, OUTPUT2, OVERLAY, RELEASE_RVC, RETRY, RVC,
     SETTINGS, SHOW, SPK_RVC, TOGGLE,
@@ -240,7 +240,7 @@ impl Ui {
                 let action = HOTKEY_COMMANDS[i];
                 let mut key = key.clone();
                 if !devices.permits(action)
-                    || !rvc_enabled && matches!(action, RVC | SPK_RVC | NOISE)
+                    || !rvc_enabled && requires_rvc(action)
                 {
                     key.enabled = false;
                 }
@@ -415,7 +415,7 @@ impl Ui {
                         | if checked { MF_CHECKED } else { MF_UNCHECKED }
                         | if self.interaction_locked && id != SETTINGS
                             || !self.rvc_enabled
-                                && matches!(id, RVC | SPK_RVC | NOISE | RELEASE_RVC | 22 | 24)
+                                && requires_rvc(route_action)
                         {
                             MF_GRAYED
                         } else {

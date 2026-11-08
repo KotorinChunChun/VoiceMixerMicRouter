@@ -292,7 +292,11 @@ impl SettingsWindow {
             3,
         )?;
         select(handle, index);
-        self.sound_device = Some(DeviceControl { handle, devices });
+        self.sound_device = Some(DeviceControl {
+            handle,
+            devices,
+            disconnected_choice: None,
+        });
         let choices: Vec<String> = crate::sounds::LABELS.iter().map(|s| (*s).into()).collect();
         for (i, label) in labels.iter().enumerate() {
             let y = 132 + i as i32 * 50;
@@ -447,12 +451,12 @@ impl SettingsWindow {
             choices.insert(0, (String::new(), UNSELECTED.into()));
             let labels: Vec<_> = choices.iter().map(|(_, name)| name.clone()).collect();
             // 未接続項目も名前順に含める。注記は表示専用で、保存名へ戻さない。
-            if !id.is_empty()
+            let disconnected = !id.is_empty()
                 && !is_default_device(id)
                 && !devices
                     .iter()
-                    .any(|d| d.state == "Active" && d.endpoint_id == *id)
-            {
+                    .any(|d| d.state == "Active" && d.endpoint_id == *id);
+            if disconnected {
                 if let Some((_, saved_name)) = choices.iter_mut().find(|(key, _)| key == id) {
                     *saved_name = name.into();
                 }
@@ -472,9 +476,11 @@ impl SettingsWindow {
             self.devices.push(DeviceControl {
                 handle: combo,
                 devices: choices,
+                disconnected_choice: disconnected.then_some(selected),
             });
             if let Some((output, on)) = enabled {
                 self.outputs[output] = self.checkbox("有効", on, 748, y, 67, 230 + output, 0)?;
+                self.tip(combo, "「未接続」のデバイスは選択先として保持されます。接続を確認して設定画面を開き直すと、出力を有効にできます。")?;
             }
             self.device_rows[i].extend_from_slice(&self.pages[0][start..]);
         }
@@ -698,7 +704,11 @@ impl SettingsWindow {
                 }
             };
             self.tip(handle, &parameter_help(&p))?;
-            self.parameters.push(ParameterControl { schema: p, handle });
+            self.parameters.push(ParameterControl {
+                schema: p,
+                handle,
+                original_input: (text(handle), checked(handle)),
+            });
         }
         self.label(
             "モデルとIndexは任意のフルパスを直接入力・貼り付けできます。相対パスはプラグイン基準です。",
@@ -829,6 +839,7 @@ impl SettingsWindow {
             .copied()
             .flatten();
         let devices = self.selected_devices();
+        let rvc_enabled = checked(self.rvc_enabled);
         self.startup_modes = [
             None,
             Some(Mode::Direct),
@@ -837,12 +848,21 @@ impl SettingsWindow {
             Some(Mode::Muted),
         ]
         .into_iter()
-        .filter(|mode| *mode == selected || mode.is_none_or(|mode| devices.has_source(mode)))
+        .filter(|mode| {
+            *mode == selected
+                || mode.is_none_or(|mode| {
+                    (rvc_enabled || !mode.is_rvc()) && devices.has_source(mode)
+                })
+        })
         .collect();
         unsafe {
             SendMessageW(self.startup, CB_RESETCONTENT, None, None);
             for mode in &self.startup_modes {
-                let label = mode.map_or("前回のモード", Mode::label);
+                let label = match mode {
+                    Some(mode) if !rvc_enabled && mode.is_rvc() => "送信停止（RVC無効）",
+                    Some(mode) => mode.label(),
+                    None => "前回のモード",
+                };
                 SendMessageW(
                     self.startup,
                     CB_ADDSTRING,
@@ -983,17 +1003,12 @@ impl SettingsWindow {
     fn refresh_hotkey_controls(&self) {
         let devices = self.selected_devices();
         for (index, row) in self.keys.iter().enumerate() {
+            let command = crate::actions::HOTKEY_COMMANDS[index];
             let available = !self.busy
-                && devices.permits(crate::actions::HOTKEY_COMMANDS[index])
-                && (checked(self.rvc_enabled)
-                    || !matches!(
-                        crate::actions::HOTKEY_COMMANDS[index],
-                        crate::actions::RVC | crate::actions::SPK_RVC | crate::actions::NOISE
-                    ));
+                && devices.permits(command)
+                && (checked(self.rvc_enabled) || !crate::actions::requires_rvc(command));
             let enabled = available && checked(row[0]);
-            let modifier_only = crate::actions::ptt_event(crate::actions::HOTKEY_COMMANDS[index])
-                .is_some()
-                && selection(row[5]) == 0;
+            let modifier_only = crate::actions::ptt_event(command).is_some() && selection(row[5]) == 0;
             if enabled && modifier_only {
                 select(row[6], 0);
             }
@@ -1034,7 +1049,10 @@ impl SettingsWindow {
                 if !selected {
                     set_checked(self.outputs[i], false);
                 }
-                let _ = EnableWindow(self.outputs[i], !self.busy && selected);
+                let device = &self.devices[i + 2];
+                let connected = device.disconnected_choice != Some(selection(device.handle));
+                let can_toggle = connected || checked(self.outputs[i]);
+                let _ = EnableWindow(self.outputs[i], !self.busy && selected && can_toggle);
             }
         }
         self.refresh_hotkey_controls();
@@ -1073,6 +1091,9 @@ impl SettingsWindow {
     pub fn applied(&mut self, settings: &Settings) {
         self.base = settings.clone();
         self.rvc_reset = false;
+        for p in &mut self.parameters {
+            p.original_input = (text(p.handle), checked(p.handle));
+        }
         self.show_unselected = false;
         if unsafe { SendMessageW(self.tab, TCM_GETCURSEL, None, None).0 } == 0 {
             self.layout_device_rows();
@@ -1171,17 +1192,13 @@ impl SettingsWindow {
         settings.cable_enabled &= selected[0];
         settings.voice_input_enabled &= selected[1];
         settings.monitoring &= selected[2];
-        if self.rvc_reset && !settings.rvc_enabled {
-            let defaults = initial_rvc_parameters();
-            for p in &self.parameters {
-                settings.rvc_parameters[&p.schema.id] = defaults
-                    .get(&p.schema.id)
-                    .unwrap_or(&p.schema.default)
-                    .clone();
+        for p in &self.parameters {
+            let input = (text(p.handle), checked(p.handle));
+            // 無効のまま開いた旧設定は検証し直さず、編集とリセットはOFFでも保存する。
+            if !settings.rvc_enabled && !self.rvc_reset && input == p.original_input {
+                continue;
             }
-        }
-        for p in self.parameters.iter().filter(|_| settings.rvc_enabled) {
-            let value = parse_parameter(&p.schema, &text(p.handle), checked(p.handle))?;
+            let value = parse_parameter(&p.schema, &input.0, input.1)?;
             let previous = self
                 .base
                 .rvc_parameters
@@ -1217,11 +1234,17 @@ impl SettingsWindow {
                 210..=214 => {
                     if action <= 211 {
                         self.refresh_startup_modes();
+                    } else {
+                        let device = &self.devices[action - 210];
+                        if device.disconnected_choice == Some(selection(device.handle)) {
+                            set_checked(self.outputs[action - 212], false);
+                        }
                     }
                     self.refresh_rvc_controls();
                     self.layout_device_rows();
                 }
                 220 => self.refresh_startup_modes(),
+                230..=232 => self.refresh_rvc_controls(),
                 10 => self.page(0),
                 11 => self.page(1),
                 12 => self.page(2),
@@ -1234,7 +1257,10 @@ impl SettingsWindow {
                         endpoint,
                     ));
                 }
-                RVC_ENABLED => self.refresh_rvc_controls(),
+                RVC_ENABLED => {
+                    self.refresh_startup_modes();
+                    self.refresh_rvc_controls();
+                }
                 260 => {
                     if let Err(error) = super::help::open_repository() {
                         self.message(&error);

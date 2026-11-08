@@ -297,6 +297,7 @@ fn settings_controls_roundtrip_and_page_layout() {
     // 無効でも有効チェック自体は操作可能。修飾・キー選択は無効化する。
     let enabled =
         |h| unsafe { windows::Win32::UI::Input::KeyboardAndMouse::IsWindowEnabled(h) }.as_bool();
+    set_checked(window.outputs[1], false);
     set_checked(window.rvc_enabled, false);
     ACTIONS.lock().unwrap().push(RVC_ENABLED);
     window.poll();
@@ -332,9 +333,17 @@ fn settings_controls_roundtrip_and_page_layout() {
     window.page(0);
     assert!(!enabled(window.noise));
     assert!(!enabled(window.devices[1].handle));
-    for index in [1, 7, 8] {
+    for index in [1, 2, 7, 8] {
         assert!(window.keys[index].iter().all(|h| !enabled(*h)));
     }
+    assert!(!enabled(window.outputs[1]));
+    assert!(enabled(window.outputs[0]) && checked(window.outputs[0]));
+    set_checked(window.outputs[0], false);
+    ACTIONS.lock().unwrap().push(230);
+    window.poll();
+    assert!(!enabled(window.outputs[0]));
+    assert!(window.tips.as_ref().unwrap().targets.contains(&window.devices[3].handle));
+    assert!(window.startup_modes.iter().flatten().all(|mode| !mode.is_rvc()));
     let disabled = window.read().unwrap();
     assert!(!disabled.rvc_enabled);
     assert_eq!(disabled.rvc_parameters, settings.rvc_parameters);
@@ -579,6 +588,22 @@ fn settings_controls_roundtrip_and_page_layout() {
     assert!(top(window.devices[4].handle) < top(window.noise));
     select(window.startup, 3);
     assert_eq!(window.read().unwrap().startup_mode, Some(Mode::SpeakerRvc));
+    let pitch_draft = window.parameters.iter().find(|p| p.schema.id == "pitch").unwrap().handle;
+    set_text(pitch_draft, "11");
+    set_checked(window.rvc_enabled, false);
+    ACTIONS.lock().unwrap().push(RVC_ENABLED);
+    window.poll();
+    assert_eq!(text(window.startup), "送信停止（RVC無効）");
+    assert!(!window.startup_modes.contains(&Some(Mode::Rvc)));
+    let draft = window.read().unwrap();
+    assert_eq!(draft.startup_mode, Some(Mode::SpeakerRvc));
+    assert_eq!(draft.effective_startup_mode(None), Mode::Muted);
+    assert_eq!(draft.rvc_parameters["pitch"], 11.0);
+    set_text(pitch_draft, "10");
+    set_checked(window.rvc_enabled, true);
+    ACTIONS.lock().unwrap().push(RVC_ENABLED);
+    window.poll();
+    assert_eq!(text(window.startup), "SPK-RVC");
     select(window.startup, 4);
     assert_eq!(window.read().unwrap().startup_mode, Some(Mode::Muted));
     for d in &window.devices {
@@ -867,6 +892,19 @@ fn settings_controls_roundtrip_and_page_layout() {
     assert_eq!(reread.voice_input_name, initial.voice_input_name);
     assert_eq!(reread.monitor_name, initial.monitor_name);
     assert_eq!(text(reopened.devices[3].handle), "Voice Input（未接続）");
+    assert!(!enabled(reopened.outputs[1]));
+    let output2 = &reopened.devices[3];
+    let disconnected = selection(output2.handle);
+    select(output2.handle, 1);
+    ACTIONS.lock().unwrap().push(213);
+    reopened.poll();
+    assert!(enabled(reopened.outputs[1]));
+    set_checked(reopened.outputs[1], true);
+    select(reopened.devices[3].handle, disconnected);
+    ACTIONS.lock().unwrap().push(213);
+    reopened.poll();
+    assert!(!enabled(reopened.outputs[1]) && !checked(reopened.outputs[1]));
+    assert_eq!(reopened.read().unwrap().voice_input_id, custom.voice_input_id);
 
     // 基本設定のリセットは、RVCの値や他タブの編集を巻き戻さない。
     let reset_basic = unsafe { GetDlgItem(Some(reopened.hwnd), RESET_BASIC as i32) }.unwrap();

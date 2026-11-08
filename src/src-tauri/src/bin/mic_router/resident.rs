@@ -123,11 +123,7 @@ pub fn run(
 ) -> Result<(), String> {
     let management = crate::management::Endpoint::start()?;
     let directory = path.parent().unwrap().to_path_buf();
-    let mut desired = settings.available_mode(
-        initial
-            .or(settings.startup_mode)
-            .unwrap_or(settings.last_mode),
-    );
+    let mut desired = settings.effective_startup_mode(initial);
     let mut generation = 1;
     let display_mode = if silent {
         config::OverlayMode::Off
@@ -230,11 +226,8 @@ pub fn run(
                     24 => ui::SPK_RVC,
                     _ => action,
                 };
-                if !devices.permits(route_action) {
-                    continue;
-                }
-                if !settings.rvc_enabled
-                    && matches!(action, ui::RVC | ui::SPK_RVC | ui::NOISE | ui::RELEASE_RVC)
+                if !devices.permits(route_action)
+                    || !settings.rvc_enabled && crate::actions::requires_rvc(route_action)
                 {
                     continue;
                 }

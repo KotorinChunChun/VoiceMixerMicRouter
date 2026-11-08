@@ -83,6 +83,26 @@ fn shift_migration_is_once_preserves_custom_disabled_handling_and_conflicts() {
     assert_eq!(Settings::load(&path).unwrap().hotkeys[7].label(), "Alt+F7");
 }
 #[test]
+fn startup_with_rvc_disabled_never_falls_back_to_raw_microphone() {
+    let mut s = settings();
+    s.rvc_enabled = false;
+    for rvc in [Mode::Rvc, Mode::SpeakerRvc] {
+        s.startup_mode = Some(rvc);
+        s.last_mode = Mode::Direct;
+        assert_eq!(s.effective_startup_mode(None), Mode::Muted);
+        assert_eq!(s.effective_startup_mode(Some(Mode::Direct)), Mode::Direct);
+        assert_eq!(s.startup_mode, Some(rvc));
+        s.startup_mode = None;
+        s.last_mode = rvc;
+        assert_eq!(s.effective_startup_mode(None), Mode::Muted);
+        assert_eq!(s.effective_startup_mode(Some(rvc)), Mode::Muted);
+        s.rvc_enabled = true;
+        assert_eq!(s.effective_startup_mode(None), rvc);
+        s.rvc_enabled = false;
+    }
+}
+
+#[test]
 fn rvc_use_migrates_enabled_and_disabled_modes_never_start_rvc() {
     let mut source = serde_json::to_value(settings()).unwrap();
     source.as_object_mut().unwrap().remove("rvc_enabled");

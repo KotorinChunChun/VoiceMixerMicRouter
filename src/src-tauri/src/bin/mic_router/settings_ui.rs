@@ -242,10 +242,12 @@ pub fn dialog_message(msg: &MSG) -> bool {
 struct ParameterControl {
     schema: ParameterDescriptor,
     handle: HWND,
+    original_input: (String, bool),
 }
 struct DeviceControl {
     handle: HWND,
     devices: Vec<(String, String)>,
+    disconnected_choice: Option<usize>,
 }
 pub struct SettingsWindow {
     pub hwnd: HWND,
