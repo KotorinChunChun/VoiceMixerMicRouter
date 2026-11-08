@@ -301,9 +301,10 @@ fn settings_controls_roundtrip_and_page_layout() {
     ACTIONS.lock().unwrap().push(222);
     window.poll();
     assert!(enabled(window.rvc_enabled));
+    assert!(enabled(window.reset_rvc_button));
     assert!(window.pages[2]
         .iter()
-        .filter(|h| **h != window.rvc_enabled)
+        .filter(|h| **h != window.rvc_enabled && **h != window.reset_rvc_button)
         .all(|h| !enabled(*h)));
     assert!(!enabled(window.noise));
     assert!(!enabled(window.devices[1].handle));
@@ -768,8 +769,12 @@ fn settings_controls_roundtrip_and_page_layout() {
     assert_eq!(window.base.rvc_parameters["pitch"], 12.0);
     drop(window);
     // 読み取った設定を開き直しても未接続の注記を保存名へ追加しない。
-    let reopened = SettingsWindow::build(
-        &initial,
+    let mut custom = initial.clone();
+    custom.rvc_enabled = false;
+    custom.rvc_parameters["pitch"] = 17.into();
+    custom.rvc_parameters["model"] = "models/custom.pth".into();
+    let mut reopened = SettingsWindow::build(
+        &custom,
         &[device("capture-only", "capture")],
         &[device("render-only", "render")],
         schema(),
@@ -783,6 +788,42 @@ fn settings_controls_roundtrip_and_page_layout() {
     assert_eq!(reread.voice_input_name, initial.voice_input_name);
     assert_eq!(reread.monitor_name, initial.monitor_name);
     assert_eq!(text(reopened.devices[3].handle), "Voice Input（未接続）");
+
+    // 基本設定のリセットは、RVCの値や他タブの編集を巻き戻さない。
+    let reset_basic = unsafe { GetDlgItem(Some(reopened.hwnd), RESET_BASIC as i32) }.unwrap();
+    select(reopened.overlay, 0);
+    select(reopened.sounds[0], 7);
+    unsafe { SendMessageW(reset_basic, BM_CLICK, None, None) };
+    assert!(reopened.poll().is_none());
+    let basic = reopened.read().unwrap();
+    assert_eq!(basic.overlay_mode, OverlayMode::Always);
+    assert_eq!(basic.startup_mode, None);
+    assert_eq!(basic.microphone_id, "default://console");
+    assert_eq!(basic.speaker_id, "default://console");
+    assert_eq!(basic.cable_id, "default://console");
+    assert!(basic.voice_input_id.is_empty() && basic.monitor_id.is_empty());
+    assert!(!basic.cable_enabled && !basic.voice_input_enabled && !basic.monitoring);
+    assert_eq!(basic.output_labels, crate::config::default_output_labels());
+    assert!(basic.noise_suppression());
+    assert_eq!(basic.rvc_parameters["pitch"], 17);
+    assert_eq!(basic.switch_sounds[0], 7);
+
+    // RVCがOFFでもリセットを実行でき、適用用の値に初期設定が含まれる。
+    set_checked(reopened.noise, false);
+    reopened.page(2);
+    let reset_rvc = unsafe { GetDlgItem(Some(reopened.hwnd), RESET_RVC as i32) }.unwrap();
+    assert!(enabled(reset_rvc));
+    unsafe { SendMessageW(reset_rvc, BM_CLICK, None, None) };
+    assert!(reopened.poll().is_none());
+    let rvc = reopened.read().unwrap();
+    assert!(!rvc.rvc_enabled);
+    assert_eq!(rvc.rvc_parameters["pitch"], 10.0);
+    assert_eq!(rvc.rvc_parameters["model"], "models/KahoA.pth");
+    assert_eq!(rvc.rvc_parameters["f0_method"], "rmvpe");
+    assert_eq!(rvc.rvc_parameters["n_cpu"], 4);
+    assert!(!rvc.noise_suppression());
+    assert_eq!(rvc.switch_sounds[0], 7);
+    assert_eq!(reopened.base, custom);
 }
 
 #[test]

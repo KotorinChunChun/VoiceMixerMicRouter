@@ -41,6 +41,8 @@ const CANCEL: usize = 2;
 const RESET_KEYS: usize = 3;
 const RESET_SOUNDS: usize = 4;
 const SHOW_UNSELECTED: usize = 5;
+const RESET_BASIC: usize = 6;
+const RESET_RVC: usize = 7;
 const CLIENT_WIDTH: i32 = 960;
 const CLIENT_HEIGHT: i32 = 700;
 const HOTKEY_BASE: usize = 1000;
@@ -162,6 +164,9 @@ pub struct SettingsWindow {
     cancel: HWND,
     message: HWND,
     busy: bool,
+    initial_microphone: String,
+    reset_rvc_button: HWND,
+    rvc_reset: bool,
 }
 pub enum Action {
     Save(Box<Settings>),

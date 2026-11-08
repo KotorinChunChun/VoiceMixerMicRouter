@@ -27,6 +27,14 @@ pub const NOISE_PARAMETER: &str = "transient_noise_suppression";
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const APP_NAME: &str = "VoiceMixerMicRouter";
 pub const UNSELECTED: &str = "未選択";
+pub fn initial_rvc_parameters() -> Value {
+    json!({
+        "model": "models/KahoA.pth", "index": "models/Kaho.index", "pitch": 10.0,
+        "f0_method": "rmvpe", "index_rate": 0.0, "block_time": 0.25,
+        "crossfade_time": 0.08, "extra_time": 2.5, "rms_mix_rate": 0.5,
+        "threshold_db": -58.0, "transient_noise_suppression": true
+    })
+}
 pub fn default_switch_sounds() -> [u8; 7] {
     [1, 2, 3, 4, 5, 6, 7]
 }

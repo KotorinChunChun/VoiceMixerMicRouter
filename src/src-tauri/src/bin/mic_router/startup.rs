@@ -21,7 +21,8 @@ pub fn initialize(path: &Path, plugins: &Path) -> Result<bool, String> {
             "monitor_id":"", "monitor_name":"未選択", "device_selection_revision":1,
             "cable_enabled":false, "voice_input_enabled":false, "monitoring":false,
             "plugin_directory":std::fs::canonicalize(plugins).map_err(|e|e.to_string())?,
-            "rvc_parameters":{},"last_mode":"muted","hotkey_defaults_revision":1
+            "rvc_parameters":crate::config::initial_rvc_parameters(),
+            "last_mode":"muted","hotkey_defaults_revision":1
         }))
         .map_err(|e| e.to_string())
     })?;
@@ -54,6 +55,10 @@ mod tests {
         );
         assert_eq!(settings.last_mode, Mode::Muted);
         assert_eq!(settings.cable_id, "default://console");
+        assert_eq!(
+            settings.rvc_parameters,
+            crate::config::initial_rvc_parameters()
+        );
         assert!(settings.voice_input_id.is_empty() && settings.monitor_id.is_empty());
         let ptt = &settings.hotkeys[13];
         assert!(ptt.is_assigned() && ptt.modifier_only && ptt.ctrl && ptt.shift);
