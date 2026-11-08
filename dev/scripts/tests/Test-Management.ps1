@@ -18,13 +18,15 @@ $pipeName="KotorinToys.$sid.voice-mixer-mic-router"
 function Request($value){
  $client=[IO.Pipes.NamedPipeClientStream]::new('.', $pipeName,[IO.Pipes.PipeDirection]::InOut,([IO.Pipes.PipeOptions]::Asynchronous -bor [IO.Pipes.PipeOptions]::CurrentUserOnly))
  try{
+  $deadline=[Diagnostics.Stopwatch]::StartNew()
   $client.Connect(2000)
   $writer=[IO.StreamWriter]::new($client,[Text.UTF8Encoding]::new($false),1024,$true)
   $reader=[IO.StreamReader]::new($client,[Text.UTF8Encoding]::new($false),$false,1024,$true)
   $writer.AutoFlush=$true
   $line=if($value -is [string]){$value}else{$value|ConvertTo-Json -Compress}
   $writer.WriteLine($line)
-  $reply=$reader.ReadLineAsync().WaitAsync([TimeSpan]::FromSeconds(3)).GetAwaiter().GetResult()
+  $remaining=[Math]::Max(0,2000-$deadline.ElapsedMilliseconds)
+  $reply=$reader.ReadLineAsync().WaitAsync([TimeSpan]::FromMilliseconds($remaining)).GetAwaiter().GetResult()
   return $reply|ConvertFrom-Json
  }finally{if($writer){$writer.Dispose()};if($reader){$reader.Dispose()};$client.Dispose()}
 }
@@ -48,7 +50,9 @@ try{
   $unknown=Request @{command='shortcuts';expectedPid=$running.Id}
   Check ($unknown.result -eq 'unsupported') '未対応操作を成功としない'
   if($origin -eq 'host_manual'){
+   $elapsed=[Diagnostics.Stopwatch]::StartNew()
    $shown=Request @{command='show';expectedPid=$running.Id}
+   Write-Output ('初回設定表示の管理応答: '+$elapsed.ElapsedMilliseconds+' ms')
    $window=[Mic118Window]::FindWindow('VoiceMixerMicSettingsV1',[NullString]::Value)
    $shown|ConvertTo-Json -Compress|Write-Output
    Write-Output ('設定HWND: '+$window)

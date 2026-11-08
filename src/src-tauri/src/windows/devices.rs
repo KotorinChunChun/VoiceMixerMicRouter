@@ -116,6 +116,17 @@ pub fn read_endpoint_peaks(endpoint_ids: &[String]) -> Vec<EndpointPeakReading> 
 
 #[cfg(windows)]
 pub fn list_devices(direction: DeviceDirection) -> Result<Vec<AudioDeviceInfo>> {
+    enumerate_devices(direction, true)
+}
+
+/// 設定画面の選択肢に使う情報だけを取得し、各デバイスの音声形式は照会しない。
+#[cfg(windows)]
+pub fn list_device_choices(direction: DeviceDirection) -> Result<Vec<AudioDeviceInfo>> {
+    enumerate_devices(direction, false)
+}
+
+#[cfg(windows)]
+fn enumerate_devices(direction: DeviceDirection, probe_formats: bool) -> Result<Vec<AudioDeviceInfo>> {
     use wasapi::{DeviceEnumerator, Direction, Role, SampleType, ShareMode, WaveFormat};
     let _ = wasapi::initialize_mta();
     let dir = match direction {
@@ -155,7 +166,12 @@ pub fn list_devices(direction: DeviceDirection) -> Result<Vec<AudioDeviceInfo>> 
         let mut current_sample_rate = None;
         let mut channels = None;
         let mut supported = Vec::new();
-        if let Ok(client) = device.get_iaudioclient() {
+        let client = if probe_formats {
+            device.get_iaudioclient().ok()
+        } else {
+            None
+        };
+        if let Some(client) = client {
             if let Ok(mix) = client.get_mixformat() {
                 current_sample_rate = Some(mix.get_samplespersec());
                 channels = Some(mix.get_nchannels());

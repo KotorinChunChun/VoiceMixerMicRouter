@@ -23,7 +23,7 @@ use audio_mixer_backend::{
         manifest::{ParameterDescriptor, ParameterKind},
         package::load_package_manifest,
     },
-    windows::devices::{list_devices, AudioDeviceInfo, DeviceDirection},
+    windows::devices::{list_device_choices, AudioDeviceInfo, DeviceDirection},
 };
 use std::sync::atomic::Ordering;
 use windows::{
@@ -41,8 +41,8 @@ use windows::{
 
 impl SettingsWindow {
     pub fn new(settings: &Settings, mode: Mode) -> Result<Self, String> {
-        let inputs = list_devices(DeviceDirection::Capture).map_err(|e| e.to_string())?;
-        let outputs = list_devices(DeviceDirection::Render).map_err(|e| e.to_string())?;
+        let inputs = list_device_choices(DeviceDirection::Capture).map_err(|e| e.to_string())?;
+        let outputs = list_device_choices(DeviceDirection::Render).map_err(|e| e.to_string())?;
         let schema = load_package_manifest(settings.plugin_directory.join("rvc-cuda/plugin.json"))
             .map(|m| m.descriptor.parameters)
             .map_err(|e| e.to_string())?;
