@@ -411,17 +411,45 @@ fn settings_controls_roundtrip_and_page_layout() {
         let dc = GetDC(Some(window.hwnd));
         let old_font = SelectObject(dc, window.font.into());
         let mut narrow = Vec::new();
-        for (column, label) in [
-            (2, "左&右Ctrl"),
-            (1, "左&右Shift"),
-            (4, "左&右Alt"),
-            (3, "左&右Windows"),
+        for (column, heading) in [
+            (2, "Ctrl"),
+            (1, "Shift"),
+            (4, "Alt"),
+            (3, "Windows"),
+            (5, "キー"),
+            (6, "モード"),
         ] {
+            let heading = window.pages[1]
+                .iter()
+                .copied()
+                .find(|handle| text(*handle) == heading)
+                .unwrap();
+            let combo = window.keys[11][column];
+            let mut title = RECT::default();
+            let mut cell = RECT::default();
+            GetWindowRect(heading, &mut title).unwrap();
+            GetWindowRect(combo, &mut cell).unwrap();
+            assert_eq!(title.left, cell.left);
+            assert!(title.bottom <= cell.top);
+            if column >= 5 {
+                continue;
+            }
+            let original = selection(combo);
+            assert_eq!(SendMessageW(combo, CB_GETCOUNT, None, None).0, 5);
+            for (index, expected) in ["不要", "左", "右", "左|右", "左&右"]
+                .into_iter()
+                .enumerate()
+            {
+                select(combo, index);
+                assert_eq!(text(combo), expected);
+            }
+            select(combo, original);
+            let label = "左&右";
             let mut size = SIZE::default();
             let chars: Vec<u16> = label.encode_utf16().collect();
             assert!(GetTextExtentPoint32W(dc, &chars, &mut size).as_bool());
             let mut rect = RECT::default();
-            GetClientRect(window.keys[11][column], &mut rect).unwrap();
+            GetClientRect(combo, &mut rect).unwrap();
             let needed = size.cx + GetSystemMetrics(SM_CXVSCROLL) + 8;
             if rect.right - rect.left < needed {
                 narrow.push(format!(

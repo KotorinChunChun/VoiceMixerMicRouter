@@ -501,9 +501,21 @@ impl SettingsWindow {
             .chain((b'A'..=b'Z').map(|c| (c as char).to_string()))
             .chain((1..=24).map(|n| format!("F{n}")))
             .collect();
+        let modifier_choices = ["不要", "左", "右", "左|右", "左&右"].map(str::to_owned);
+        let modifier_columns = [
+            (2, "Ctrl", 292, 104),
+            (1, "Shift", 400, 104),
+            (4, "Alt", 508, 96),
+            (3, "Windows", 608, 136),
+        ];
+        for (_, label, x, width) in modifier_columns {
+            self.label(label, x, 54, width, 21, 1)?;
+        }
+        self.label("キー", 750, 54, 75, 21, 1)?;
+        self.label("モード", 830, 54, 95, 21, 1)?;
         for (row, &i) in display_order().iter().enumerate() {
             // 表示順とタブ移動順を揃え、保存時には従来の添字を維持する。
-            let y = 70
+            let y = 78
                 + row as i32 * 29
                 + if row >= 3 { 14 } else { 0 }
                 + if row >= 8 { 14 } else { 0 };
@@ -527,17 +539,16 @@ impl SettingsWindow {
             // 列IDと保存順は維持し、修飾キーの表示順だけCtrl、Shift、Alt、Windowsにする。
             controls[0] =
                 self.checkbox("有効", k.is_assigned(), 235, y, 55, HOTKEY_BASE + i * 10, 1)?;
-            for (j, name, on, side, x, width) in [
-                (2, "Ctrl", k.ctrl, k.ctrl_side, 292, 104),
-                (1, "Shift", k.shift, k.shift_side, 400, 104),
-                (4, "Alt", k.alt, k.alt_side, 508, 96),
-                (3, "Windows", k.win, k.win_side, 608, 136),
-            ] {
-                let choices = modifier_choices(name);
+            for ((j, _, x, width), (on, side)) in modifier_columns.into_iter().zip([
+                (k.ctrl, k.ctrl_side),
+                (k.shift, k.shift_side),
+                (k.alt, k.alt_side),
+                (k.win, k.win_side),
+            ]) {
                 let selected = modifier_index(on, side);
                 controls[j] = self.combo(
-                    &choices,
-                    &choices[selected],
+                    &modifier_choices,
+                    &modifier_choices[selected],
                     false,
                     x,
                     y,
@@ -1256,15 +1267,6 @@ fn primary_key_label(key: &Hotkey) -> &str {
     }
 }
 
-fn modifier_choices(name: &str) -> [String; 5] {
-    [
-        format!("{name}不要"),
-        format!("左{name}"),
-        format!("右{name}"),
-        format!("左|右{name}"),
-        format!("左&右{name}"),
-    ]
-}
 fn modifier_index(enabled: bool, side: ModifierSide) -> usize {
     if !enabled {
         0
