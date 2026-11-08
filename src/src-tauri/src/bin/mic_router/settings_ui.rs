@@ -164,7 +164,6 @@ pub struct SettingsWindow {
     cancel: HWND,
     message: HWND,
     busy: bool,
-    initial_microphone: String,
     reset_rvc_button: HWND,
     rvc_reset: bool,
 }

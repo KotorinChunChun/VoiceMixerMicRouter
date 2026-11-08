@@ -1,10 +1,10 @@
 //! 基本設定とRVC設定の構築・読み取り・操作。
 use super::super::{
     config::{
-        choose_microphone, default_hotkeys, default_output_labels, default_switch_sounds,
-        device_choices, initial_rvc_parameters, is_default_device, DeviceSelection, Hotkey,
-        KeyHandling, Mode, ModifierSide, OverlayMode, Settings, HOTKEY_COUNT, HOTKEY_LABELS,
-        NOISE_PARAMETER, UNSELECTED,
+        default_hotkeys, default_output_labels, default_switch_sounds, device_choices,
+        initial_rvc_parameters, is_default_device, DeviceSelection, Hotkey, KeyHandling, Mode,
+        ModifierSide, OverlayMode, Settings, HOTKEY_COUNT, HOTKEY_LABELS, NOISE_PARAMETER,
+        UNSELECTED,
     },
     ui,
 };
@@ -143,9 +143,6 @@ impl SettingsWindow {
                 cancel: HWND::default(),
                 message: HWND::default(),
                 busy: false,
-                initial_microphone: choose_microphone(inputs)
-                    .map_or(DEFAULT_CONSOLE_ENDPOINT, |mic| mic.endpoint_id.as_str())
-                    .into(),
                 reset_rvc_button: HWND::default(),
                 rvc_reset: false,
             };
@@ -871,7 +868,7 @@ impl SettingsWindow {
         select_label(self.overlay, OverlayMode::default().label());
         select(self.startup, 0);
         for (device, id) in self.devices.iter().zip([
-            self.initial_microphone.as_str(),
+            DEFAULT_CONSOLE_ENDPOINT,
             DEFAULT_CONSOLE_ENDPOINT,
             DEFAULT_CONSOLE_ENDPOINT,
             "",

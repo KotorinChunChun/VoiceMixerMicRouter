@@ -136,6 +136,12 @@ fn overlay_actions_match_drawn_cells_and_output_states() {
     assert_eq!(controls[8].text, "モニタ用[F11]ON");
     assert_eq!(controls[9].text, "設定");
     assert_eq!(controls[9].rect, OPEN_SETTINGS_RECT);
+    assert!(!controls[9].active);
+    let idle_colors = control_colors(&controls[9]);
+    assert_eq!(idle_colors.0, rgb(33, 101, 94));
+    let mut open = controls[9].clone();
+    open.active = true;
+    assert_ne!(control_colors(&open).0, idle_colors.0);
     for (index, left) in [(0, 56), (1, 188), (9, 320)] {
         assert_eq!(controls[index].rect.left, left);
         assert_eq!(controls[index].rect.right, left + 128);

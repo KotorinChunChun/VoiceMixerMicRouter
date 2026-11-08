@@ -789,8 +789,7 @@ fn warm_switch_preserves_nodes_and_keeps_monitor_on_selected_output() {
     assert!(settings.validate().is_err());
 }
 #[test]
-fn virtual_input_and_ambiguous_cable_are_rejected() {
-    assert!(choose_microphone(&[device("CABLE Output", true)]).is_err());
+fn alternate_cable_is_not_used_as_the_standard_cable() {
     assert!(choose_cable(&[device("CABLE-C Input (VB-Audio Cable C)", false)]).is_err());
     let devices = vec![
         device("CABLE In 16ch (VB-Audio Virtual Cable)", false),

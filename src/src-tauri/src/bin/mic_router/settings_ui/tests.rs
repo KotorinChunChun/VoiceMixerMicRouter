@@ -789,9 +789,12 @@ fn settings_controls_roundtrip_and_page_layout() {
     custom.rvc_enabled = false;
     custom.rvc_parameters["pitch"] = 17.into();
     custom.rvc_parameters["model"] = "models/custom.pth".into();
+    let mut default_mic: audio_mixer_backend::windows::devices::AudioDeviceInfo =
+        device("capture-only", "capture");
+    default_mic.is_default = true;
     let mut reopened = SettingsWindow::build(
         &custom,
-        &[device("capture-only", "capture")],
+        &[default_mic],
         &[device("render-only", "render")],
         schema(),
         Mode::SpeakerRvc,

@@ -146,7 +146,7 @@ pub fn run() -> Result<(), String> {
         if path.exists() {
             return Err("設定が既にあります。既存設定は上書きしません".into());
         }
-        Settings::detect(&plugins)?.save(&path)?;
+        Settings::initial_settings(&plugins)?.save(&path)?;
         return Ok(());
     }
     let new_settings = if !path.exists()

@@ -14,7 +14,7 @@ pub use crate::actions::{HOTKEY_COUNT, HOTKEY_LABELS};
 use audio_mixer_backend::windows::devices::DEFAULT_CONSOLE_ENDPOINT;
 #[cfg(test)]
 pub use devices::choose_cable;
-pub use devices::{choose_microphone, device_choices, is_default_device};
+pub use devices::{device_choices, is_default_device};
 use hotkey::deserialize_hotkeys;
 pub use hotkey::{default_hotkeys, Hotkey, KeyHandling, ModifierSide};
 pub use project::{OUTPUT_SELECTOR, SOURCE_SELECTOR, VOICE_INPUT_OUTPUT};
@@ -115,18 +115,18 @@ pub struct Settings {
     /// 入力4モードと出力3系統それぞれの効果音。0はなし。
     #[serde(default = "default_switch_sounds")]
     pub switch_sounds: [u8; 7],
-    #[serde(default = "default_speaker_id")]
+    #[serde(default = "default_console_id")]
     pub sound_device_id: String,
-    #[serde(default = "default_speaker_name")]
+    #[serde(default = "default_console_name")]
     pub sound_device_name: String,
     /// 表示専用の用途名。デバイス名や音声ノードの識別には使わない。
     #[serde(default = "default_output_labels")]
     pub output_labels: [String; 3],
     pub microphone_id: String,
     pub microphone_name: String,
-    #[serde(default = "default_speaker_id")]
+    #[serde(default = "default_console_id")]
     pub speaker_id: String,
-    #[serde(default = "default_speaker_name")]
+    #[serde(default = "default_console_name")]
     pub speaker_name: String,
     pub cable_id: String,
     pub cable_name: String,
@@ -160,7 +160,7 @@ pub struct Settings {
     pub monitor_name: String,
 }
 
-fn default_speaker_id() -> String {
+fn default_console_id() -> String {
     DEFAULT_CONSOLE_ENDPOINT.into()
 }
 fn enabled_default() -> bool {
@@ -172,7 +172,7 @@ fn default_voice_input_id() -> String {
 fn default_voice_input_name() -> String {
     "VB-CABLE-D".into()
 }
-fn default_speaker_name() -> String {
+fn default_console_name() -> String {
     "既定のデバイス".into()
 }
 #[derive(Clone, Copy, PartialEq, Eq)]

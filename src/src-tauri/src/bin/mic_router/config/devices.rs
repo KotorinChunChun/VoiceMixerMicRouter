@@ -42,20 +42,6 @@ pub(super) fn choose_voice_input(devices: &[AudioDeviceInfo]) -> Option<&AudioDe
         Some(candidate)
     }
 }
-pub fn choose_microphone(devices: &[AudioDeviceInfo]) -> Result<&AudioDeviceInfo, String> {
-    let device = devices
-        .iter()
-        .find(|d| d.is_default && d.state == "Active")
-        .ok_or("既定マイクがありません")?;
-    let name = device.friendly_name.to_ascii_lowercase();
-    if name.contains("cable") || name.contains("voicemeeter") || name.contains("virtual") {
-        return Err(
-            "既定入力が仮想デバイスです。ループを避けるため実マイクのIDを指定してください".into(),
-        );
-    }
-    Ok(device)
-}
-
 #[cfg(test)]
 pub fn choose_cable(devices: &[AudioDeviceInfo]) -> Result<&AudioDeviceInfo, String> {
     // CABLE-C/D や 16ch をあいまいな部分一致で選ばない。

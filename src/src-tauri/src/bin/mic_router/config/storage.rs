@@ -1,8 +1,8 @@
 //! 設定の検出、旧版移行、読み書き。
 use super::devices::choose_voice_input;
 use super::{
-    choose_microphone, default_hotkeys, default_speaker_id, default_speaker_name,
-    default_voice_input_id, Mode, OverlayMode, Settings, UNSELECTED,
+    default_console_id, default_console_name, default_hotkeys, default_voice_input_id, Mode,
+    OverlayMode, Settings, UNSELECTED,
 };
 use audio_mixer_backend::windows::devices::{
     list_devices, DeviceDirection, DEFAULT_CONSOLE_ENDPOINT,
@@ -11,9 +11,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::{fs, path::Path};
 impl Settings {
-    pub fn detect(plugin_directory: &Path) -> Result<Self, String> {
-        let inputs = list_devices(DeviceDirection::Capture).map_err(|e| e.to_string())?;
-        let mic = choose_microphone(&inputs)?;
+    pub fn initial_settings(plugin_directory: &Path) -> Result<Self, String> {
         Ok(Self {
             device_selection_revision: 1,
             hotkey_defaults_revision: 1,
@@ -22,12 +20,12 @@ impl Settings {
             sound_device_id: "default://console".into(),
             sound_device_name: "既定のデバイス".into(),
             output_labels: super::default_output_labels(),
-            microphone_id: mic.endpoint_id.clone(),
-            microphone_name: mic.friendly_name.clone(),
-            speaker_id: default_speaker_id(),
-            speaker_name: default_speaker_name(),
-            cable_id: default_speaker_id(),
-            cable_name: default_speaker_name(),
+            microphone_id: default_console_id(),
+            microphone_name: default_console_name(),
+            speaker_id: default_console_id(),
+            speaker_name: default_console_name(),
+            cable_id: default_console_id(),
+            cable_name: default_console_name(),
             cable_enabled: true,
             voice_input_id: String::new(),
             voice_input_name: UNSELECTED.into(),

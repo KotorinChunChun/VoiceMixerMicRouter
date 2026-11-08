@@ -13,21 +13,7 @@ pub fn initialize(path: &Path, plugins: &Path) -> Result<bool, String> {
     if path.exists() {
         return Ok(false);
     }
-    let mut settings = Settings::detect(plugins).or_else(|_| {
-        serde_json::from_value::<Settings>(serde_json::json!({
-            "microphone_id":"default://console", "microphone_name":"既定のデバイス",
-            "cable_id":"default://console", "cable_name":"既定のデバイス",
-            "voice_input_id":"", "voice_input_name":"未選択",
-            "monitor_id":"", "monitor_name":"未選択", "device_selection_revision":1,
-            "cable_enabled":false, "voice_input_enabled":false, "monitoring":false,
-            "plugin_directory":std::fs::canonicalize(plugins).map_err(|e|e.to_string())?,
-            "rvc_parameters":crate::config::initial_rvc_parameters(),
-            "last_mode":"muted","hotkey_defaults_revision":1
-        }))
-        .map_err(|e| e.to_string())
-    })?;
-    // 旧設定の読み込みでは既定を変えず、新規作成時だけ新しいキーを設定する。
-    settings.hotkeys = crate::config::default_hotkeys();
+    let mut settings = Settings::initial_settings(plugins)?;
     settings.rvc_enabled = false;
     settings.cable_enabled = false;
     settings.voice_input_enabled = false;
@@ -54,6 +40,8 @@ mod tests {
                 && !settings.voice_input_enabled
         );
         assert_eq!(settings.last_mode, Mode::Muted);
+        assert_eq!(settings.microphone_id, "default://console");
+        assert_eq!(settings.microphone_name, "既定のデバイス");
         assert_eq!(settings.cable_id, "default://console");
         assert_eq!(
             settings.rvc_parameters,

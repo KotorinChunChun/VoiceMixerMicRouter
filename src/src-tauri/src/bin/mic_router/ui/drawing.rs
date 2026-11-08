@@ -1,7 +1,9 @@
 //! オーバーレイの描画とGDI資源。表示・操作状態は保持しない。
 use super::super::telemetry::{self, Snapshot};
 use super::overlay::{OverlayControl, INPUT_TOP, OUTPUT_TOP, SETTINGS_TOP};
-use super::{wide, DIRECT, MONITOR, MUTED, NOISE, OUTPUT1, OUTPUT2, OVERLAY, RVC, SPK_RVC};
+use super::{
+    wide, DIRECT, MONITOR, MUTED, NOISE, OUTPUT1, OUTPUT2, OVERLAY, RVC, SETTINGS, SPK_RVC,
+};
 use std::time::Instant;
 use windows::{
     core::PCWSTR,
@@ -17,6 +19,9 @@ pub(super) const fn rgb(red: u8, green: u8, blue: u8) -> COLORREF {
 
 pub(super) fn control_colors(control: &OverlayControl) -> (COLORREF, COLORREF, COLORREF) {
     if !control.active {
+        if control.action == SETTINGS {
+            return (rgb(33, 101, 94), rgb(93, 183, 169), rgb(255, 255, 255));
+        }
         return (rgb(52, 59, 70), rgb(87, 96, 109), rgb(203, 210, 220));
     }
     if control.held {
