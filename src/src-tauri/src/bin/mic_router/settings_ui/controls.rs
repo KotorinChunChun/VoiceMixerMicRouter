@@ -3,9 +3,12 @@ use super::SettingsWindow;
 use windows::{
     core::PCWSTR,
     Win32::{
-        Foundation::{HWND, LPARAM, WPARAM},
+        Foundation::{HWND, LPARAM, LRESULT, WPARAM},
         System::LibraryLoader::GetModuleHandleW,
-        UI::WindowsAndMessaging::*,
+        UI::{
+            Shell::{DefSubclassProc, RemoveWindowSubclass, SetWindowSubclass},
+            WindowsAndMessaging::*,
+        },
     },
 };
 
@@ -55,7 +58,71 @@ pub(super) fn select_label(hwnd: HWND, label: &str) {
     }
 }
 
+// 初回表示では現在のキーだけを入れ、一覧が必要になった行で全候補を用意する。
+unsafe extern "system" fn primary_key_proc(
+    hwnd: HWND,
+    message: u32,
+    w: WPARAM,
+    l: LPARAM,
+    id: usize,
+    _: usize,
+) -> LRESULT {
+    unsafe {
+        if message == WM_NCDESTROY {
+            let _ = RemoveWindowSubclass(hwnd, Some(primary_key_proc), id);
+        } else if matches!(
+            message,
+            WM_SETFOCUS | WM_LBUTTONDOWN | WM_KEYDOWN | WM_MOUSEWHEEL
+                | CB_SHOWDROPDOWN | CB_GETCOUNT | CB_GETLBTEXT | CB_GETLBTEXTLEN
+                | CB_FINDSTRING | CB_FINDSTRINGEXACT | CB_SETCURSEL
+        ) {
+            let _ = RemoveWindowSubclass(hwnd, Some(primary_key_proc), id);
+            let current = text(hwnd);
+            let choices: Vec<String> = std::iter::once("なし".into())
+                .chain((b'A'..=b'Z').map(|c| (c as char).to_string()))
+                .chain((1..=24).map(|n| format!("F{n}")))
+                .collect();
+            SendMessageW(hwnd, CB_RESETCONTENT, None, None);
+            add_combo_items(hwnd, &choices);
+            select_label(hwnd, &current);
+        }
+        DefSubclassProc(hwnd, message, w, l)
+    }
+}
+
+fn add_combo_items(hwnd: HWND, values: &[String]) {
+    unsafe {
+        for value in values {
+            SendMessageW(
+                hwnd,
+                CB_ADDSTRING,
+                None,
+                Some(LPARAM(wide(value).as_ptr() as isize)),
+            );
+        }
+    }
+}
+
 impl SettingsWindow {
+    pub(super) fn primary_key_combo(
+        &mut self,
+        value: &str,
+        x: i32,
+        y: i32,
+        width: i32,
+        id: usize,
+    ) -> Result<HWND, String> {
+        let mut initial = vec!["なし".into()];
+        if value != "なし" {
+            initial.push(value.into());
+        }
+        let hwnd = self.combo(&initial, value, false, x, y, width, id, 1)?;
+        if !unsafe { SetWindowSubclass(hwnd, Some(primary_key_proc), 0, 0) }.as_bool() {
+            return Err("主キーの候補を初期化できません".into());
+        }
+        Ok(hwnd)
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn control(
         &mut self,
@@ -75,7 +142,11 @@ impl SettingsWindow {
                 PCWSTR(wide(class).as_ptr()),
                 PCWSTR(wide(label).as_ptr()),
                 WS_CHILD
-                    | WS_VISIBLE
+                    | if page.is_none_or(|index| index == self.active_page.get()) {
+                        WS_VISIBLE
+                    } else {
+                        WINDOW_STYLE(0)
+                    }
                     | WINDOW_STYLE(style)
                     | if class == "STATIC" {
                         WINDOW_STYLE(0)
@@ -183,16 +254,7 @@ impl SettingsWindow {
                 SendMessageW(h, CB_LIMITTEXT, Some(WPARAM(32767)), None);
             }
         }
-        for value in values {
-            unsafe {
-                SendMessageW(
-                    h,
-                    CB_ADDSTRING,
-                    None,
-                    Some(LPARAM(wide(value).as_ptr() as isize)),
-                );
-            }
-        }
+        add_combo_items(h, values);
         if let Some(index) = values.iter().position(|s| s == value) {
             select(h, index);
         } else if editable {

@@ -64,12 +64,14 @@ fn settings_controls_roundtrip_and_page_layout() {
         ],
         schema(),
         Mode::SpeakerRvc,
+        |_| {},
     )
     .unwrap();
     assert_eq!(
         text(window.hwnd),
         crate::window_title::WindowTitle::create("設定")
     );
+    window.show();
     assert_eq!(window.devices.len(), 5);
     assert_eq!(window.sounds.map(selection), [1, 2, 3, 4, 5, 6, 7]);
     let sound_device = window.sound_device.as_ref().unwrap();
@@ -883,8 +885,10 @@ fn settings_controls_roundtrip_and_page_layout() {
         &[device("render-only", "render")],
         schema(),
         Mode::SpeakerRvc,
+        |_| {},
     )
     .unwrap();
+    reopened.show();
     let reread = reopened.read().unwrap();
     assert_eq!(reread.microphone_name, initial.microphone_name);
     assert_eq!(reread.speaker_name, initial.speaker_name);

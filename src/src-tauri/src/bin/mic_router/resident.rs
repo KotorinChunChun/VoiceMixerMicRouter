@@ -121,7 +121,6 @@ pub fn run(
     silent: bool,
     launch_origin: String,
 ) -> Result<(), String> {
-    let management = crate::management::Endpoint::start()?;
     let directory = path.parent().unwrap().to_path_buf();
     let mut desired = settings.effective_startup_mode(initial);
     let mut generation = 1;
@@ -156,6 +155,7 @@ pub fn run(
     } else {
         None
     };
+    let management = crate::management::Endpoint::start()?;
     let mut held = [false; 3];
     let mut pending: Option<(u64, PendingSettings)> = None;
     let mut deferred = VecDeque::new();
@@ -192,19 +192,32 @@ pub fn run(
                         if std::time::Instant::now() >= call.deadline {
                             continue;
                         }
-                        let (mut result, mut detail) =
-                            crate::management::validate(&call.request, blocked);
+                        let (result, detail) = crate::management::validate(&call.request, blocked);
                         if result == "completed" && call.request.command == "show" {
                             if let Some(w) = &window {
                                 w.show();
                             } else {
-                                match settings_ui::SettingsWindow::new(&settings, desired) {
+                                let mut pending_reply = Some(call);
+                                let shown = settings_ui::SettingsWindow::show_for_management(
+                                    &settings,
+                                    desired,
+                                    || {
+                                        if let Some(call) = pending_reply.take() {
+                                            call.respond("completed", "", &launch_origin);
+                                        }
+                                    },
+                                );
+                                match shown {
                                     Ok(w) => window = Some(w),
-                                    Err(_) => {
-                                        result = "failed";
-                                        detail = "設定画面を表示できませんでした。";
+                                    Err(error) => {
+                                        if let Some(call) = pending_reply.take() {
+                                            call.respond("failed", "設定画面を表示できませんでした。", &launch_origin);
+                                        } else {
+                                            ui.notify(&error);
+                                        }
                                     }
                                 }
+                                continue;
                             }
                         }
                         call.respond(result, detail, &launch_origin);

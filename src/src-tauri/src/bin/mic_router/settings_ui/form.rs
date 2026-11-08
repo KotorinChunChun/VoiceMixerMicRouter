@@ -41,12 +41,35 @@ use windows::{
 
 impl SettingsWindow {
     pub fn new(settings: &Settings, mode: Mode) -> Result<Self, String> {
+        let window = Self::load(settings, mode, |_| {})?;
+        window.show();
+        Ok(window)
+    }
+
+    pub fn show_for_management(
+        settings: &Settings,
+        mode: Mode,
+        on_show: impl FnOnce(),
+    ) -> Result<Self, String> {
+        let window = Self::load(settings, mode, |window| {
+            window.show();
+            on_show();
+        })?;
+        window.show();
+        Ok(window)
+    }
+
+    fn load(
+        settings: &Settings,
+        mode: Mode,
+        on_basic_ready: impl FnOnce(&Self),
+    ) -> Result<Self, String> {
         let inputs = list_device_choices(DeviceDirection::Capture).map_err(|e| e.to_string())?;
         let outputs = list_device_choices(DeviceDirection::Render).map_err(|e| e.to_string())?;
         let schema = load_package_manifest(settings.plugin_directory.join("rvc-cuda/plugin.json"))
             .map(|m| m.descriptor.parameters)
             .map_err(|e| e.to_string())?;
-        Self::build(settings, &inputs, &outputs, schema, mode)
+        Self::build(settings, &inputs, &outputs, schema, mode, on_basic_ready)
     }
     pub(super) fn build(
         settings: &Settings,
@@ -54,6 +77,7 @@ impl SettingsWindow {
         outputs: &[AudioDeviceInfo],
         schema: Vec<ParameterDescriptor>,
         mode: Mode,
+        on_basic_ready: impl FnOnce(&Self),
     ) -> Result<Self, String> {
         unsafe {
             let instance = GetModuleHandleW(None).map_err(|e| e.to_string())?;
@@ -206,6 +230,11 @@ impl SettingsWindow {
                 }
             }
             s.build_basic_page(settings, inputs, outputs)?;
+            // 管理要求は基本設定が実際に表示された時点で応答する。
+            // 残りのコントロールが揃うまで操作を受け付けない。
+            s.page(0);
+            let _ = EnableWindow(hwnd, false);
+            on_basic_ready(&s);
             s.build_keys_page(settings)?;
             s.build_rvc_page(settings, schema)?;
             s.build_sounds_page(settings, outputs)?;
@@ -252,7 +281,7 @@ impl SettingsWindow {
             s.page(0);
             ACTIONS.lock().unwrap().clear();
             WINDOW.store(hwnd.0 as isize, Ordering::Relaxed);
-            s.show();
+            let _ = EnableWindow(hwnd, true);
             Ok(s)
         }
     }
@@ -518,10 +547,6 @@ impl SettingsWindow {
     }
 
     fn build_keys_page(&mut self, settings: &Settings) -> Result<(), String> {
-        let key_choices: Vec<String> = std::iter::once("なし".into())
-            .chain((b'A'..=b'Z').map(|c| (c as char).to_string()))
-            .chain((1..=24).map(|n| format!("F{n}")))
-            .collect();
         let modifier_choices = ["不要", "左", "右", "左|右", "左&右"].map(str::to_owned);
         let combo_width = 100;
         let column_x = |column| 292 + column * (combo_width + 6);
@@ -584,15 +609,12 @@ impl SettingsWindow {
                     "左|右はどちらか一方以上、左&右は左右同時です。不要は割当に含めません。",
                 )?;
             }
-            controls[5] = self.combo(
-                &key_choices,
+            controls[5] = self.primary_key_combo(
                 primary_key_label(k),
-                false,
                 column_x(4),
                 y,
                 combo_width,
                 HOTKEY_BASE + 5 + i * 10,
-                1,
             )?;
             controls[6] = self.combo(
                 &KeyHandling::ALL.map(|mode| mode.label().into()),
