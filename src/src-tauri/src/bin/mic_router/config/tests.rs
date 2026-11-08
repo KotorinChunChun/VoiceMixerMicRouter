@@ -6,6 +6,7 @@ use audio_mixer_backend::windows::devices::{AudioDeviceInfo, DEFAULT_COMMUNICATI
 use std::fs;
 fn settings() -> Settings {
     Settings {
+        device_selection_revision: 0,
         hotkey_defaults_revision: 1,
         rvc_enabled: true,
         switch_sounds: default_switch_sounds(),
@@ -883,6 +884,7 @@ fn eleven_row_migration_preserves_custom_keys_and_defaults_ptt_to_none() {
 #[test]
 fn temporary_outputs_force_on_without_changing_saved_baseline() {
     let mut s = settings();
+    s.monitor_id = "monitor".into();
     s.cable_enabled = false;
     s.voice_input_enabled = false;
     s.monitoring = true;
@@ -898,6 +900,7 @@ fn temporary_outputs_force_on_without_changing_saved_baseline() {
 fn ptt_masks_all_normal_outputs_and_restores_every_saved_combination() {
     for normal in 0..8 {
         let mut s = settings();
+        s.monitor_id = "monitor".into();
         s.cable_enabled = normal & 1 != 0;
         s.voice_input_enabled = normal & 2 != 0;
         s.monitoring = normal & 4 != 0;
@@ -920,6 +923,33 @@ fn ptt_masks_all_normal_outputs_and_restores_every_saved_combination() {
             serde_json::to_value(s.with_output_holds([false; 3])).unwrap(),
             before
         );
+    }
+}
+
+#[test]
+fn explicit_unselected_roundtrips_and_cannot_open_an_audio_path() {
+    let folder = tempfile::tempdir().unwrap();
+    let path = folder.path().join("mic-settings.json");
+    let mut saved = settings();
+    saved.device_selection_revision = 1;
+    saved.microphone_id.clear();
+    saved.speaker_id.clear();
+    saved.cable_id.clear();
+    saved.voice_input_id.clear();
+    saved.monitor_id.clear();
+    saved.cable_enabled = false;
+    saved.voice_input_enabled = false;
+    saved.monitoring = false;
+    saved.save(&path).unwrap();
+    let loaded = Settings::load(&path).unwrap();
+    assert_eq!(loaded.device_selection().outputs, [false; 3]);
+    assert!(!loaded.with_output_holds([true; 3]).monitoring);
+    for mode in [Mode::Direct, Mode::Rvc, Mode::SpeakerRvc] {
+        assert_eq!(loaded.available_mode(mode), Mode::Muted);
+        let graph = loaded.project(mode).unwrap();
+        assert!(graph.nodes.values().all(|node| {
+            matches!(node.properties, NodeProperties::InputSelector { .. }) || !node.runtime_enabled
+        }));
     }
 }
 

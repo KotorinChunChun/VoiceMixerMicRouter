@@ -445,7 +445,7 @@ impl ResidentSession {
         // 完了通知の直前に届き、まだコマンド列から取り出していないMIC/停止も優先する。
         let mode = match self.route_request.load(Ordering::SeqCst) {
             _ if self.drain_target.is_some() => self.mode,
-            1 => Mode::Direct,
+            1 => self.settings.available_mode(Mode::Direct),
             2 => Mode::Muted,
             _ if self.mode.is_rvc()
                 && (self.preparation.pending()
@@ -494,8 +494,9 @@ impl ResidentSession {
             guard.release = None;
             return Ok(());
         }
-        let same = resolve(&self.settings.speaker_id).map_or(true, |input| input == device);
-        if (self.mode == Mode::SpeakerRvc || self.drain_target == Some(Mode::SpeakerRvc)) && same {
+        if (self.mode == Mode::SpeakerRvc || self.drain_target == Some(Mode::SpeakerRvc))
+            && resolve(&self.settings.speaker_id).map_or(true, |input| input == device)
+        {
             self.sound_guard = Some(SoundGuard {
                 start: Instant::now() + Duration::from_millis(50),
                 revision: u64::MAX,
@@ -604,7 +605,7 @@ impl ResidentSession {
         let mut graph = backend.controller.snapshot();
         // 現在のMIC/停止は維持し、RVCだけは解放より先に閉じる。
         let mode = match self.route_request.load(Ordering::SeqCst) {
-            1 => Mode::Direct,
+            1 => self.settings.available_mode(Mode::Direct),
             2 => Mode::Muted,
             _ if self.mode.is_rvc() => Mode::Muted,
             _ => self.mode,
@@ -824,12 +825,8 @@ impl ResidentSession {
     fn configure(&mut self, next: &Settings) -> Result<(), String> {
         next.validate()?;
         let previous = self.settings.clone();
-        if !next.rvc_enabled {
-            if self.mode.is_rvc() {
-                self.set_mode(Mode::Direct)?;
-            }
-            self.unload_rvc()?;
-        }
+        let previous_mode = self.mode;
+        let target = next.available_mode(self.mode);
         if previous.microphone_id != next.microphone_id
             || previous.speaker_id != next.speaker_id
             || previous.cable_id != next.cable_id
@@ -842,13 +839,39 @@ impl ResidentSession {
         {
             self.delay.reset();
         }
-        if let Err(error) = self.configure_inner(next) {
-            if let Err(rollback) = self.configure_inner(&previous) {
+        let applied = (|| {
+            if target != self.mode {
+                self.set_mode(if previous.device_selection().has_source(target) {
+                    target
+                } else {
+                    Mode::Muted
+                })?;
+            }
+            if !next.rvc_enabled {
+                self.unload_rvc()?;
+            }
+            self.configure_inner(next)?;
+            self.settings = next.clone();
+            if self.mode != target {
+                self.set_mode(target)?;
+            } else if previous.device_selection() != next.device_selection() {
+                self.apply_selected_route()?;
+            }
+            Ok(())
+        })();
+        if let Err(error) = applied {
+            self.settings = previous.clone();
+            if let Err(rollback) = self.configure_inner(&previous).and_then(|()| {
+                if self.mode != previous_mode {
+                    self.set_mode(previous_mode)?;
+                }
+                Ok(())
+            }) {
                 return Err(format!("{error} / 旧設定への復旧にも失敗: {rollback}"));
             }
             return Err(error);
         }
-        self.settings = next.clone();
+        self.output_holds = next.device_selection().filter_holds(self.output_holds);
         Ok(())
     }
     fn configure_inner(&mut self, next: &Settings) -> Result<(), String> {
@@ -1048,7 +1071,7 @@ impl ResidentSession {
         )
     }
     fn set_output_holds(&mut self, holds: [bool; 3]) -> Result<(), String> {
-        self.output_holds = holds;
+        self.output_holds = self.settings.device_selection().filter_holds(holds);
         self.last_monitor_check = Instant::now() - Duration::from_secs(2);
         self.refresh_monitor_target()?;
         self.apply_selected_route()

@@ -12,7 +12,9 @@ mod storage;
 mod tests;
 pub use crate::actions::{HOTKEY_COUNT, HOTKEY_LABELS};
 use audio_mixer_backend::windows::devices::DEFAULT_CONSOLE_ENDPOINT;
-pub use devices::{choose_cable, choose_microphone, device_choices, is_default_device};
+#[cfg(test)]
+pub use devices::choose_cable;
+pub use devices::{choose_microphone, device_choices, is_default_device};
 use hotkey::deserialize_hotkeys;
 pub use hotkey::{default_hotkeys, Hotkey, KeyHandling, ModifierSide};
 pub use project::{OUTPUT_SELECTOR, SOURCE_SELECTOR, VOICE_INPUT_OUTPUT};
@@ -24,6 +26,7 @@ pub const NOISE_PARAMETER: &str = "transient_noise_suppression";
 /// 常駐ツール固有の版。本体Cargoパッケージとは独立して更新する。
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const APP_NAME: &str = "VoiceMixerMicRouter";
+pub const UNSELECTED: &str = "未選択";
 pub fn default_switch_sounds() -> [u8; 7] {
     [1, 2, 3, 4, 5, 6, 7]
 }
@@ -96,6 +99,8 @@ impl OverlayMode {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
     #[serde(default)]
+    pub device_selection_revision: u8,
+    #[serde(default)]
     pub hotkey_defaults_revision: u8,
     #[serde(default = "enabled_default")]
     pub rvc_enabled: bool,
@@ -162,17 +167,69 @@ fn default_voice_input_name() -> String {
 fn default_speaker_name() -> String {
     "既定のデバイス".into()
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct DeviceSelection {
+    pub microphone: bool,
+    pub speaker: bool,
+    pub outputs: [bool; 3],
+}
+impl Default for DeviceSelection {
+    fn default() -> Self {
+        Self {
+            microphone: true,
+            speaker: true,
+            outputs: [true; 3],
+        }
+    }
+}
+impl DeviceSelection {
+    pub fn filter_holds(self, holds: [bool; 3]) -> [bool; 3] {
+        std::array::from_fn(|i| holds[i] && self.outputs[i])
+    }
+    pub fn has_source(self, mode: Mode) -> bool {
+        match mode {
+            Mode::Direct | Mode::Rvc => self.microphone,
+            Mode::SpeakerRvc => self.speaker,
+            Mode::Muted => true,
+        }
+    }
+    pub fn permits(self, action: usize) -> bool {
+        use crate::actions::*;
+        match action {
+            DIRECT | RVC | TOGGLE => self.microphone,
+            SPK_RVC => self.speaker,
+            OUTPUT1 | PTT1 => self.outputs[0],
+            OUTPUT2 | PTT2 => self.outputs[1],
+            MONITOR | PTT3 => self.outputs[2],
+            _ => true,
+        }
+    }
+}
 impl Settings {
+    pub fn device_selection(&self) -> DeviceSelection {
+        DeviceSelection {
+            microphone: !self.microphone_id.is_empty(),
+            speaker: !self.speaker_id.is_empty(),
+            outputs: [&self.cable_id, &self.voice_input_id, &self.monitor_id]
+                .map(|id| !id.is_empty()),
+        }
+    }
     /// RVCを停止している間も保存済みの起動モード・キー割当は保持する。
     pub fn available_mode(&self, mode: Mode) -> Mode {
-        if !self.rvc_enabled && mode.is_rvc() {
+        let devices = self.device_selection();
+        if !devices.has_source(mode) {
+            Mode::Muted
+        } else if !self.rvc_enabled && mode.is_rvc() && devices.microphone {
             Mode::Direct
+        } else if !self.rvc_enabled && mode.is_rvc() {
+            Mode::Muted
         } else {
             mode
         }
     }
     /// 押下中の出力だけを有効化する。保存対象の設定値は変更しない。
     pub fn with_output_holds(&self, holds: [bool; 3]) -> Self {
+        let holds = self.device_selection().filter_holds(holds);
         let mut effective = self.clone();
         if holds.iter().any(|held| *held) {
             effective.cable_enabled = holds[0];
@@ -198,10 +255,9 @@ impl Settings {
         if self.switch_sounds.iter().any(|sound| *sound > 7) {
             return Err("効果音の選択が不正です".into());
         }
-        if self.microphone_id.is_empty()
-            || self.speaker_id.is_empty()
-            || self.cable_id.is_empty()
-            || (self.microphone_id == self.cable_id && !is_default_device(&self.microphone_id))
+        if !self.microphone_id.is_empty()
+            && self.microphone_id == self.cable_id
+            && !is_default_device(&self.microphone_id)
         {
             return Err("マイクとVB-CABLEの異なるEndpoint IDが必要です".into());
         }

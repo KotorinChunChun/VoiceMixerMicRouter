@@ -56,6 +56,7 @@ pub fn choose_microphone(devices: &[AudioDeviceInfo]) -> Result<&AudioDeviceInfo
     Ok(device)
 }
 
+#[cfg(test)]
 pub fn choose_cable(devices: &[AudioDeviceInfo]) -> Result<&AudioDeviceInfo, String> {
     // CABLE-C/D や 16ch をあいまいな部分一致で選ばない。
     let candidates: Vec<_> = devices

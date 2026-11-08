@@ -220,6 +220,9 @@ pub fn run() -> Result<(), String> {
             launch_origin,
         );
     };
+    if !settings.device_selection().has_source(mode) {
+        return Err("指定モードの入力デバイスが未選択です".into());
+    }
     let mut session = engine::start(&settings, directory, mode)?;
     let started = Instant::now();
     while started.elapsed() < Duration::from_secs(10) {

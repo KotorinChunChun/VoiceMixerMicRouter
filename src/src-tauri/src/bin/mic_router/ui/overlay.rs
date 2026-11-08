@@ -164,13 +164,7 @@ fn overlay_controls(
             DISPLAY_RECT.right,
             SETTINGS_TOP,
         ),
-        (
-            NOISE,
-            noise_label,
-            188,
-            316,
-            SETTINGS_TOP,
-        ),
+        (NOISE, noise_label, 188, 316, SETTINGS_TOP),
         (DIRECT, "MIC".into(), 56, 151, INPUT_TOP),
         (RVC, "MIC-RVC".into(), 155, 250, INPUT_TOP),
         (SPK_RVC, "SPK-RVC".into(), 254, 349, INPUT_TOP),
@@ -234,6 +228,29 @@ fn overlay_controls(
         });
     }
     items
+}
+
+fn configure_device_rows(
+    controls: &mut Vec<OverlayControl>,
+    devices: crate::config::DeviceSelection,
+) {
+    controls.retain(|control| devices.permits(control.action));
+    for top in [INPUT_TOP, OUTPUT_TOP] {
+        let count = controls
+            .iter()
+            .filter(|control| control.rect.top == top)
+            .count() as i32;
+        let usable = 392 - (count - 1) * 4;
+        for (i, control) in controls
+            .iter_mut()
+            .filter(|control| control.rect.top == top)
+            .enumerate()
+        {
+            let i = i as i32;
+            control.rect.left = 56 + i * 4 + usable * i / count;
+            control.rect.right = 56 + i * 4 + usable * (i + 1) / count;
+        }
+    }
 }
 
 fn configure_inputs(controls: &mut Vec<OverlayControl>, rvc_enabled: bool, phase: &str) {
@@ -447,6 +464,7 @@ unsafe extern "system" fn overlay_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARA
 
 pub(super) struct Buttons<'a> {
     pub rvc_enabled: bool,
+    pub devices: crate::config::DeviceSelection,
     pub phase: &'a str,
     pub keys: &'a [String; HOTKEY_COUNT],
     pub mode: Mode,
@@ -529,6 +547,7 @@ impl Overlay {
             buttons.holds,
         );
         configure_inputs(&mut controls, buttons.rvc_enabled, buttons.phase);
+        configure_device_rows(&mut controls, buttons.devices);
         if let Some(settings) = controls.iter_mut().find(|c| c.action == SETTINGS) {
             settings.active = self.state.locked.load(Ordering::Relaxed)
                 && !self.state.allow_mode_escape.load(Ordering::Relaxed);

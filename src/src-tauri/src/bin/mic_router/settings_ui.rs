@@ -38,6 +38,9 @@ const CLASS: &str = "VoiceMixerMicSettingsV1";
 const TAB: usize = 12;
 const SAVE: usize = 1;
 const CANCEL: usize = 2;
+const RESET_KEYS: usize = 3;
+const RESET_SOUNDS: usize = 4;
+const SHOW_UNSELECTED: usize = 5;
 const CLIENT_WIDTH: i32 = 960;
 const CLIENT_HEIGHT: i32 = 700;
 const HOTKEY_BASE: usize = 1000;
@@ -141,6 +144,9 @@ pub struct SettingsWindow {
     tab: HWND,
     keys: Vec<[HWND; 7]>,
     devices: Vec<DeviceControl>,
+    device_rows: [Vec<HWND>; 5],
+    show_unselected: bool,
+    expand_devices: HWND,
     parameters: Vec<ParameterControl>,
     sounds: [HWND; 7],
     sound_device: Option<DeviceControl>,
@@ -151,6 +157,7 @@ pub struct SettingsWindow {
     noise: HWND,
     rvc_enabled: HWND,
     startup: HWND,
+    startup_modes: Vec<Option<super::config::Mode>>,
     save: HWND,
     cancel: HWND,
     message: HWND,

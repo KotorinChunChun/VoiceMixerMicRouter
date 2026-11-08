@@ -144,6 +144,7 @@ pub fn run(
     )?;
     ui.output_labels = settings.output_labels.clone();
     ui.rvc_enabled = settings.rvc_enabled;
+    ui.devices = settings.device_selection();
     if let Err(error) = ui.set_hotkeys(&settings.hotkeys) {
         ui.notify(&error);
     }
@@ -222,6 +223,16 @@ pub fn run(
                 None
             };
             for action in queued.into_iter().chain(ui.poll()?) {
+                let devices = settings.device_selection();
+                let route_action = match action {
+                    21 => ui::DIRECT,
+                    22 => ui::RVC,
+                    24 => ui::SPK_RVC,
+                    _ => action,
+                };
+                if !devices.permits(route_action) {
+                    continue;
+                }
                 if !settings.rvc_enabled
                     && matches!(action, ui::RVC | ui::SPK_RVC | ui::NOISE | ui::RELEASE_RVC)
                 {
@@ -433,7 +444,11 @@ pub fn run(
                     settings_ui::Action::Save(mut candidate) => {
                         candidate.last_mode = settings.last_mode;
                         let prepared = ui
-                            .set_hotkeys_for_rvc(&candidate.hotkeys, candidate.rvc_enabled)
+                            .set_hotkeys_for(
+                                &candidate.hotkeys,
+                                candidate.rvc_enabled,
+                                candidate.device_selection(),
+                            )
                             .and_then(|_| candidate.save(&path));
                         match prepared {
                             Ok(()) => {
@@ -453,9 +468,7 @@ pub fn run(
                                 }
                             }
                             Err(e) => {
-                                if let Err(rollback) =
-                                    ui.set_hotkeys_for_rvc(&settings.hotkeys, settings.rvc_enabled)
-                                {
+                                if let Err(rollback) = ui.set_hotkeys(&settings.hotkeys) {
                                     ui.notify(&rollback);
                                 }
                                 if let Some(w) = &window {
@@ -474,6 +487,15 @@ pub fn run(
                     if applied {
                         settings = candidate;
                         ui.rvc_enabled = settings.rvc_enabled;
+                        ui.devices = settings.device_selection();
+                        let available_holds = ui.devices.filter_holds(held);
+                        if available_holds != held {
+                            held = available_holds;
+                            ui.output_holds = held;
+                            commands
+                                .send(engine::Command::Hold(held))
+                                .map_err(|e| e.to_string())?;
+                        }
                         if let ApplyOrigin::Shortcut(action) = origin {
                             let index = match action {
                                 ui::OUTPUT1 => Some(4),
@@ -516,9 +538,7 @@ pub fn run(
                             message.push_str(&format!(" / 設定の復元失敗: {e}"));
                         }
                         if matches!(origin, ApplyOrigin::Editor) {
-                            if let Err(e) =
-                                ui.set_hotkeys_for_rvc(&settings.hotkeys, settings.rvc_enabled)
-                            {
+                            if let Err(e) = ui.set_hotkeys(&settings.hotkeys) {
                                 message.push_str(&format!(" / キーの復元失敗: {e}"));
                             }
                         }

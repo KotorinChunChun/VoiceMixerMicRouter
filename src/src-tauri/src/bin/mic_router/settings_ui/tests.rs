@@ -104,9 +104,10 @@ fn settings_controls_roundtrip_and_page_layout() {
     select(window.sounds[0], 1);
 
     for field in &window.devices {
-        assert_eq!(field.devices[0].0, "default://console");
-        assert_eq!(field.devices[1].0, "default://communications");
-        let names: Vec<_> = field.devices[2..]
+        assert_eq!(field.devices[0], (String::new(), "未選択".into()));
+        assert_eq!(field.devices[1].0, "default://console");
+        assert_eq!(field.devices[2].0, "default://communications");
+        let names: Vec<_> = field.devices[3..]
             .iter()
             .map(|(_, name)| name.to_lowercase())
             .collect();
@@ -504,14 +505,14 @@ fn settings_controls_roundtrip_and_page_layout() {
     select(window.startup, 4);
     assert_eq!(window.read().unwrap().startup_mode, Some(Mode::Muted));
     for d in &window.devices {
-        assert_eq!(d.devices[0].0, "default://console");
-        assert_eq!(d.devices[1].0, "default://communications");
+        assert_eq!(d.devices[1].0, "default://console");
+        assert_eq!(d.devices[2].0, "default://communications");
     }
-    select(window.devices[0].handle, 0);
-    select(window.devices[1].handle, 0);
-    select(window.devices[2].handle, 0);
-    select(window.devices[3].handle, 1);
-    select(window.devices[4].handle, 1);
+    select(window.devices[0].handle, 1);
+    select(window.devices[1].handle, 1);
+    select(window.devices[2].handle, 1);
+    select(window.devices[3].handle, 2);
+    select(window.devices[4].handle, 2);
     for output in window.outputs {
         set_checked(output, false);
     }
@@ -570,10 +571,14 @@ fn settings_controls_roundtrip_and_page_layout() {
 
         for (i, controls) in window.pages.iter().enumerate() {
             for handle in controls {
-                assert_eq!(unsafe { IsWindowVisible(*handle) }.as_bool(), page == i);
+                assert_eq!(
+                    unsafe { IsWindowVisible(*handle) }.as_bool(),
+                    page == i && *handle != window.expand_devices
+                );
             }
         }
         let mut visible = window.pages[page].clone();
+        visible.retain(|handle| *handle != window.expand_devices);
         visible.extend([window.tab, window.message, window.save, window.cancel]);
         let mut client = RECT::default();
         let mut origin = windows::Win32::Foundation::POINT::default();
@@ -714,6 +719,49 @@ fn settings_controls_roundtrip_and_page_layout() {
     assert!(!checked(window.keys[12][0]));
     assert!(!enabled(window.keys[12][5]));
     assert!(!enabled(window.keys[11][5]));
+    window.page(0);
+    let output3 = window.devices[4].handle;
+    select(output3, 0);
+    ACTIONS.lock().unwrap().push(214);
+    assert!(window.poll().is_none());
+    assert!(unsafe { IsWindowVisible(output3) }.as_bool());
+    assert!(!enabled(window.outputs[2]) && !checked(window.outputs[2]));
+    let draft = window.read().unwrap();
+    assert!(draft.monitor_id.is_empty());
+    assert!(!window.base.monitor_id.is_empty());
+    window.applied(&draft);
+    assert!(!unsafe { IsWindowVisible(output3) }.as_bool());
+    assert!(unsafe { IsWindowVisible(window.expand_devices) }.as_bool());
+    unsafe { SendMessageW(window.expand_devices, BM_CLICK, None, None) };
+    assert!(window.poll().is_none());
+    assert!(unsafe { IsWindowVisible(output3) }.as_bool());
+
+    let reset_keys = unsafe { GetDlgItem(Some(window.hwnd), RESET_KEYS as i32) }.unwrap();
+    let reset_sounds = unsafe { GetDlgItem(Some(window.hwnd), RESET_SOUNDS as i32) }.unwrap();
+    let sound_device = window.sound_device.as_ref().unwrap().handle;
+    select(sound_device, 1);
+    select(window.sounds[0], 7);
+    window.page(1);
+    assert!(!unsafe { IsWindowVisible(reset_sounds) }.as_bool());
+    unsafe { SendMessageW(reset_keys, BM_CLICK, None, None) };
+    assert!(window.poll().is_none());
+    let key_reset = window.read().unwrap();
+    assert_eq!(key_reset.hotkeys, crate::config::default_hotkeys());
+    assert!(!enabled(window.keys[13][0]));
+    assert_eq!(key_reset.switch_sounds[0], 7);
+    assert_eq!(key_reset.sound_device_id, "default://communications");
+    set_checked(window.keys[0][0], false);
+    window.page(3);
+    assert!(!unsafe { IsWindowVisible(reset_keys) }.as_bool());
+    unsafe { SendMessageW(reset_sounds, BM_CLICK, None, None) };
+    assert!(window.poll().is_none());
+    let sounds_reset = window.read().unwrap();
+    assert_eq!(sounds_reset.switch_sounds, [1, 2, 3, 4, 5, 6, 7]);
+    assert_eq!(sounds_reset.sound_device_id, "default://console");
+    assert!(!sounds_reset.hotkeys[0].enabled);
+    assert_eq!(sounds_reset.output_labels, key_reset.output_labels);
+    assert_eq!(sounds_reset.rvc_parameters, key_reset.rvc_parameters);
+    assert_eq!(window.base.hotkeys, draft.hotkeys);
     set_text(pitch, "13");
     ACTIONS.lock().unwrap().push(CANCEL);
     assert!(matches!(window.poll(), Some(Action::Close)));

@@ -156,6 +156,32 @@ fn overlay_actions_match_drawn_cells_and_output_states() {
 }
 
 #[test]
+fn unselected_devices_have_no_click_target_and_remaining_cells_fill_the_row() {
+    let keys = default_hotkeys().map(|key| key.key_label().into());
+    let mut controls = overlay_controls(
+        &keys,
+        Mode::Muted,
+        OverlayMode::Always,
+        [false; 3],
+        "RVCノイズ抑制 OFF",
+        &crate::config::default_output_labels(),
+        [false; 3],
+    );
+    configure_device_rows(
+        &mut controls,
+        crate::config::DeviceSelection {
+            microphone: false,
+            speaker: false,
+            outputs: [false, true, false],
+        },
+    );
+    for x in 56..448 {
+        assert_eq!(control_at(&controls, x, INPUT_TOP), Some(MUTED));
+        assert_eq!(control_at(&controls, x, OUTPUT_TOP), Some(OUTPUT2));
+    }
+}
+
+#[test]
 fn input_selection_outputs_and_click_gaps_stay_independent() {
     let keys = default_hotkeys().map(|k| k.key_label().to_owned());
     for (mode, selected) in [
@@ -297,6 +323,7 @@ fn settings_button_operates_in_an_isolated_overlay() {
         String::new(),
     );
     let buttons = || Buttons {
+        devices: Default::default(),
         rvc_enabled: true,
         phase: "running",
         keys: &keys,

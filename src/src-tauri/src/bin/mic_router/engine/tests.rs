@@ -157,6 +157,40 @@ fn gated_preparation(active: &mut ResidentSession, fail: bool) -> mpsc::Sender<(
     release
 }
 
+#[test]
+fn removing_the_active_input_stops_its_worker_and_mutes_the_route() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut active = isolated_session(directory.path());
+    let descriptor = active
+        .session
+        .backend()
+        .plugins
+        .list_plugins()
+        .into_iter()
+        .find(|descriptor| descriptor.input_ports.len() == 1 && descriptor.output_ports.len() == 1)
+        .unwrap();
+    write_json(&directory.path().join("rvc-cuda/plugin.json"), &descriptor).unwrap();
+    active.set_mode(Mode::Direct).unwrap();
+    assert!(active.session.backend().nodes.is_active(active.microphone));
+    active.route_request.store(1, Ordering::SeqCst);
+
+    let mut next = active.settings.clone();
+    next.microphone_id.clear();
+    next.microphone_name = crate::config::UNSELECTED.into();
+    active.configure(&next).unwrap();
+
+    assert_eq!(active.mode, Mode::Muted);
+    assert!(!active.session.backend().nodes.is_active(active.microphone));
+    let graph = active.session.backend().controller.snapshot();
+    assert!(graph.nodes.values().any(|node| {
+        node.display_name == crate::config::OUTPUT_SELECTOR
+            && matches!(
+                node.properties,
+                NodeProperties::InputSelector { mute: true, .. }
+            )
+    }));
+}
+
 struct ModelStep {
     model: String,
     release: mpsc::Receiver<()>,

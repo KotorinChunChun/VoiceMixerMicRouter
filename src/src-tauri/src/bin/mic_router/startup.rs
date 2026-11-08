@@ -17,6 +17,8 @@ pub fn initialize(path: &Path, plugins: &Path) -> Result<bool, String> {
         serde_json::from_value::<Settings>(serde_json::json!({
             "microphone_id":"default://console", "microphone_name":"既定のデバイス",
             "cable_id":"default://console", "cable_name":"既定のデバイス",
+            "voice_input_id":"", "voice_input_name":"未選択",
+            "monitor_id":"", "monitor_name":"未選択", "device_selection_revision":1,
             "cable_enabled":false, "voice_input_enabled":false, "monitoring":false,
             "plugin_directory":std::fs::canonicalize(plugins).map_err(|e|e.to_string())?,
             "rvc_parameters":{},"last_mode":"muted","hotkey_defaults_revision":1
@@ -51,6 +53,8 @@ mod tests {
                 && !settings.voice_input_enabled
         );
         assert_eq!(settings.last_mode, Mode::Muted);
+        assert_eq!(settings.cable_id, "default://console");
+        assert!(settings.voice_input_id.is_empty() && settings.monitor_id.is_empty());
         let ptt = &settings.hotkeys[13];
         assert!(ptt.is_assigned() && ptt.modifier_only && ptt.ctrl && ptt.shift);
         assert_eq!(ptt.ctrl_side, crate::config::ModifierSide::Left);

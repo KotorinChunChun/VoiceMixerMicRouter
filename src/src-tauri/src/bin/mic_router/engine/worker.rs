@@ -33,6 +33,7 @@ pub fn spawn(
         let mut report = Instant::now();
         let mut failed = false;
         let mut deferred_configuration: Option<(Settings, Settings)> = None;
+        let mut rollback_mode = None;
         'run: loop {
             let command = match rx.recv_timeout(Duration::from_millis(20)) {
                 Ok(Command::Exit) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -56,7 +57,7 @@ pub fn spawn(
                         }
                     }
                     Command::Hold(holds) => {
-                        output_holds = holds;
+                        output_holds = settings.device_selection().filter_holds(holds);
                         desired.get_or_insert((Mode::Direct, 0));
                         failed = false;
                         retry = Instant::now();
@@ -66,7 +67,8 @@ pub fn spawn(
                     }
 
                     Command::Set(mode, generation) => {
-                        let mode = settings.available_mode(mode);
+                        let active_settings = session.as_ref().map_or(&settings, |s| &s.settings);
+                        let mode = active_settings.available_mode(mode);
                         desired = Some((mode, generation));
                         failed = false;
                         retry = Instant::now();
@@ -81,7 +83,8 @@ pub fn spawn(
                         session.as_mut().map_or(Ok(()), |s| s.request_mode(mode))
                     }
                     Command::Configure(next, generation) => {
-                        let mode = next.available_mode(desired.map_or(Mode::Direct, |d| d.0));
+                        let previous_mode = desired.map_or(Mode::Direct, |d| d.0);
+                        let mode = next.available_mode(previous_mode);
                         desired = Some((mode, generation));
                         let mut deferred = false;
                         let result = if let Some(s) = session.as_mut() {
@@ -118,14 +121,19 @@ pub fn spawn(
                         };
                         if !deferred {
                             applied = Some(result.is_ok());
+                        } else {
+                            rollback_mode = Some((generation, previous_mode));
                         }
                         if result.is_ok() && !deferred {
                             settings = *next;
+                            output_holds = settings.device_selection().filter_holds(output_holds);
+                        } else if result.is_err() {
+                            desired = Some((previous_mode, generation));
                         }
                         result
                     }
                     Command::ReleaseRvc(generation) => {
-                        desired = Some((Mode::Direct, generation));
+                        desired = Some((settings.available_mode(Mode::Direct), generation));
                         session
                             .as_mut()
                             .map_or(Ok(()), ResidentSession::release_rvc)
@@ -166,7 +174,7 @@ pub fn spawn(
                 }
                 report = Instant::now();
             }
-            let Some((mode, generation)) = desired else {
+            let Some((mut mode, generation)) = desired else {
                 continue;
             };
             if session.is_none() && Instant::now() >= retry {
@@ -214,8 +222,21 @@ pub fn spawn(
                 }
                 if let Some(response) = active.configuration_response.take() {
                     settings = response.settings;
-                    let mut update =
-                        Status::new(mode, generation, active.phase(), response.message);
+                    output_holds = settings.device_selection().filter_holds(output_holds);
+                    let mut message = response.message;
+                    if let Some((applying_generation, previous_mode)) = rollback_mode.take() {
+                        if !response.applied
+                            && generation == applying_generation
+                            && mode != previous_mode
+                        {
+                            if let Err(error) = active.set_mode(previous_mode) {
+                                message.push_str(&format!(" / 旧モードへの復旧失敗: {error}"));
+                            }
+                            mode = active.mode;
+                            desired = Some((mode, generation));
+                        }
+                    }
+                    let mut update = Status::new(mode, generation, active.phase(), message);
                     update.applied = Some(response.applied);
                     update.diagnostics = Some(active.snapshot());
                     let _ = events.send(update);
@@ -235,9 +256,27 @@ pub fn spawn(
                             );
                             update.applied = Some(result.is_ok());
                             match result {
-                                Ok(_) => settings = next,
+                                Ok(_) => {
+                                    settings = next;
+                                    output_holds =
+                                        settings.device_selection().filter_holds(output_holds);
+                                }
                                 Err(error) => {
-                                    let rollback = active.configure(&previous);
+                                    let rollback = active.configure(&previous).and_then(|()| {
+                                        if let Some((applying_generation, previous_mode)) =
+                                            rollback_mode
+                                        {
+                                            if generation == applying_generation
+                                                && mode != previous_mode
+                                            {
+                                                active.set_mode(previous_mode)?;
+                                            }
+                                        }
+                                        Ok(())
+                                    });
+                                    mode = active.mode;
+                                    desired = Some((mode, generation));
+                                    update.mode = mode;
                                     update.phase = "error".into();
                                     update.message =
                                         rollback.err().map_or(error.clone(), |rollback| {
@@ -245,6 +284,7 @@ pub fn spawn(
                                         });
                                 }
                             }
+                            rollback_mode = None;
                             update.diagnostics = Some(active.snapshot());
                             let _ = events.send(update);
                         }

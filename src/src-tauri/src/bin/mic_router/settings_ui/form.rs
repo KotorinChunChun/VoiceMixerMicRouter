@@ -1,26 +1,27 @@
 //! 基本設定とRVC設定の構築・読み取り・操作。
 use super::super::{
     config::{
-        device_choices, is_default_device, Hotkey, KeyHandling, Mode, ModifierSide, OverlayMode,
-        Settings, HOTKEY_COUNT, HOTKEY_LABELS, NOISE_PARAMETER,
+        default_hotkeys, default_switch_sounds, device_choices, is_default_device, DeviceSelection,
+        Hotkey, KeyHandling, Mode, ModifierSide, OverlayMode, Settings, HOTKEY_COUNT,
+        HOTKEY_LABELS, NOISE_PARAMETER, UNSELECTED,
     },
     ui,
 };
 use super::{
-    controls::{checked, select, selection, set_checked, set_text, text, wide},
+    controls::{checked, select, select_label, selection, set_checked, set_text, text, wide},
     display_order,
     parameters::{
         parameter_help, parameter_label, parameter_text, parameter_value_changed, parse_parameter,
     },
     Action, DeviceControl, ParameterControl, SettingsWindow, ACTIONS, CANCEL, CLASS, CLIENT_HEIGHT,
-    CLIENT_WIDTH, HOTKEY_BASE, SAVE, TAB, WINDOW,
+    CLIENT_WIDTH, HOTKEY_BASE, RESET_KEYS, RESET_SOUNDS, SAVE, SHOW_UNSELECTED, TAB, WINDOW,
 };
 use audio_mixer_backend::{
     plugins::{
         manifest::{ParameterDescriptor, ParameterKind},
         package::load_package_manifest,
     },
-    windows::devices::{list_devices, AudioDeviceInfo, DeviceDirection},
+    windows::devices::{list_devices, AudioDeviceInfo, DeviceDirection, DEFAULT_CONSOLE_ENDPOINT},
 };
 use std::sync::atomic::Ordering;
 use windows::{
@@ -122,6 +123,9 @@ impl SettingsWindow {
                 tab: HWND::default(),
                 keys: vec![[HWND::default(); 7]; HOTKEY_COUNT],
                 devices: Vec::new(),
+                device_rows: std::array::from_fn(|_| Vec::new()),
+                show_unselected: false,
+                expand_devices: HWND::default(),
                 parameters: Vec::new(),
                 sounds: [HWND::default(); 7],
                 sound_device: None,
@@ -132,6 +136,7 @@ impl SettingsWindow {
                 noise: HWND::default(),
                 rvc_enabled: HWND::default(),
                 startup: HWND::default(),
+                startup_modes: Vec::new(),
                 save: HWND::default(),
                 cancel: HWND::default(),
                 message: HWND::default(),
@@ -192,6 +197,19 @@ impl SettingsWindow {
             s.build_keys_page(settings)?;
             s.build_rvc_page(settings, schema)?;
             s.build_sounds_page(settings, outputs)?;
+            for (page, id) in [(1, RESET_KEYS), (3, RESET_SOUNDS)] {
+                s.control(
+                    "BUTTON",
+                    "初期値に戻す",
+                    BS_PUSHBUTTON as u32,
+                    id,
+                    CLIENT_WIDTH - 180,
+                    568,
+                    145,
+                    30,
+                    Some(page),
+                )?;
+            }
             s.refresh_rvc_controls();
             s.message = s.control("STATIC", "", 0, 400, 20, 624, CLIENT_WIDTH - 45, 22, None)?;
             s.save = s.control(
@@ -305,6 +323,13 @@ impl SettingsWindow {
             "送信停止".into(),
         ];
         self.startup = self.combo(&modes, "前回のモード", false, 190, 126, 545, 220, 0)?;
+        self.startup_modes = vec![
+            None,
+            Some(Mode::Direct),
+            Some(Mode::Rvc),
+            Some(Mode::SpeakerRvc),
+            Some(Mode::Muted),
+        ];
         select(
             self.startup,
             match settings.startup_mode {
@@ -315,6 +340,17 @@ impl SettingsWindow {
                 Some(Mode::Muted) => 4,
             },
         );
+        self.expand_devices = self.control(
+            "BUTTON",
+            "未選択の欄を表示",
+            BS_PUSHBUTTON as u32,
+            SHOW_UNSELECTED,
+            748,
+            126,
+            177,
+            28,
+            Some(0),
+        )?;
         for (i, (label, devices, id, name, enabled)) in [
             (
                 "入力マイク",
@@ -356,6 +392,7 @@ impl SettingsWindow {
         .enumerate()
         {
             let y = 202 + i as i32 * 43;
+            let start = self.pages[0].len();
             if let Some((output, _)) = enabled {
                 self.label(&format!("出力{}", output + 1), 20, y, 43, 27, 0)?;
                 self.output_labels[output] = self.control(
@@ -382,9 +419,11 @@ impl SettingsWindow {
             }
             let name = name.trim_end_matches("（未接続）");
             let mut choices = device_choices(devices, id, name);
+            choices.insert(0, (String::new(), UNSELECTED.into()));
             let labels: Vec<_> = choices.iter().map(|(_, name)| name.clone()).collect();
             // 未接続項目も名前順に含める。注記は表示専用で、保存名へ戻さない。
-            if !is_default_device(id)
+            if !id.is_empty()
+                && !is_default_device(id)
                 && !devices
                     .iter()
                     .any(|d| d.state == "Active" && d.endpoint_id == *id)
@@ -412,7 +451,9 @@ impl SettingsWindow {
             if let Some((output, on)) = enabled {
                 self.outputs[output] = self.checkbox("有効", on, 748, y, 67, 230 + output, 0)?;
             }
+            self.device_rows[i].extend_from_slice(&self.pages[0][start..]);
         }
+        self.refresh_startup_modes();
         self.noise = self.checkbox(
             "短いノイズを抑制（RVC）",
             settings.noise_suppression(),
@@ -499,10 +540,9 @@ impl SettingsWindow {
                     "左|右はどちらか一方以上、左&右は左右同時です。不要は割当に含めません。",
                 )?;
             }
-            let selected = if k.key == "None" { "なし" } else { &k.key };
             controls[5] = self.combo(
                 &key_choices,
-                selected,
+                primary_key_label(k),
                 false,
                 750,
                 y,
@@ -655,6 +695,124 @@ impl SettingsWindow {
                 }
             }
         }
+        if index == 0 {
+            self.layout_device_rows();
+        }
+    }
+    fn selected_devices(&self) -> DeviceSelection {
+        let selected = |index: usize| selection(self.devices[index].handle) != 0;
+        DeviceSelection {
+            microphone: selected(0),
+            speaker: selected(1),
+            outputs: std::array::from_fn(|i| selected(i + 2)),
+        }
+    }
+    fn layout_device_rows(&self) {
+        let current = self.selected_devices();
+        let saved = self.base.device_selection();
+        let assigned = [
+            current.microphone,
+            current.speaker,
+            current.outputs[0],
+            current.outputs[1],
+            current.outputs[2],
+        ];
+        let previously_assigned = [
+            saved.microphone,
+            saved.speaker,
+            saved.outputs[0],
+            saved.outputs[1],
+            saved.outputs[2],
+        ];
+        let mut y = 202;
+        for (i, controls) in self.device_rows.iter().enumerate() {
+            let visible = assigned[i] || previously_assigned[i] || self.show_unselected;
+            for control in controls {
+                unsafe {
+                    let mut rect = RECT::default();
+                    let _ = GetWindowRect(*control, &mut rect);
+                    let mut pos = windows::Win32::Foundation::POINT {
+                        x: rect.left,
+                        y: rect.top,
+                    };
+                    let _ = ScreenToClient(self.hwnd, &mut pos);
+                    let _ = SetWindowPos(
+                        *control,
+                        None,
+                        pos.x,
+                        y,
+                        0,
+                        0,
+                        SWP_NOSIZE
+                            | SWP_NOZORDER
+                            | SWP_NOACTIVATE
+                            | if visible {
+                                SWP_SHOWWINDOW
+                            } else {
+                                SWP_HIDEWINDOW
+                            },
+                    );
+                }
+            }
+            if visible {
+                y += 43;
+            }
+        }
+        set_text(
+            self.expand_devices,
+            if self.show_unselected {
+                "未選択の欄を隠す"
+            } else {
+                "未選択の欄を表示"
+            },
+        );
+        unsafe {
+            let _ = ShowWindow(
+                self.expand_devices,
+                if assigned.iter().all(|selected| *selected) {
+                    SW_HIDE
+                } else {
+                    SW_SHOW
+                },
+            );
+        }
+    }
+    fn refresh_startup_modes(&mut self) {
+        let selected = self
+            .startup_modes
+            .get(selection(self.startup))
+            .copied()
+            .flatten();
+        let devices = self.selected_devices();
+        self.startup_modes = [
+            None,
+            Some(Mode::Direct),
+            Some(Mode::Rvc),
+            Some(Mode::SpeakerRvc),
+            Some(Mode::Muted),
+        ]
+        .into_iter()
+        .filter(|mode| *mode == selected || mode.is_none_or(|mode| devices.has_source(mode)))
+        .collect();
+        unsafe {
+            SendMessageW(self.startup, CB_RESETCONTENT, None, None);
+            for mode in &self.startup_modes {
+                let label = mode.map_or("前回のモード", Mode::label);
+                SendMessageW(
+                    self.startup,
+                    CB_ADDSTRING,
+                    None,
+                    Some(LPARAM(wide(label).as_ptr() as isize)),
+                );
+            }
+        }
+        select(
+            self.startup,
+            self.startup_modes
+                .iter()
+                .position(|mode| *mode == selected)
+                .unwrap_or(0),
+        );
     }
     pub fn show(&self) {
         unsafe {
@@ -696,9 +854,39 @@ impl SettingsWindow {
             ""
         });
     }
+    fn reset_keys(&self) {
+        for (row, key) in self.keys.iter().zip(default_hotkeys()) {
+            set_checked(row[0], key.is_assigned());
+            select(row[1], modifier_index(key.shift, key.shift_side));
+            select(row[2], modifier_index(key.ctrl, key.ctrl_side));
+            select(row[3], modifier_index(key.win, key.win_side));
+            select(row[4], modifier_index(key.alt, key.alt_side));
+            select_label(row[5], primary_key_label(&key));
+            select_label(row[6], key.handling.label());
+        }
+        self.refresh_hotkey_controls();
+        self.message("キー設定を初期値に戻しました。「適用」で反映します。");
+    }
+    fn reset_sounds(&self) {
+        for (handle, sound) in self.sounds.into_iter().zip(default_switch_sounds()) {
+            select(handle, usize::from(sound));
+        }
+        if let Some(device) = &self.sound_device {
+            if let Some(index) = device
+                .devices
+                .iter()
+                .position(|(id, _)| id == DEFAULT_CONSOLE_ENDPOINT)
+            {
+                select(device.handle, index);
+            }
+        }
+        self.message("効果音設定を初期値に戻しました。「適用」で反映します。");
+    }
     fn refresh_hotkey_controls(&self) {
+        let devices = self.selected_devices();
         for (index, row) in self.keys.iter().enumerate() {
             let available = !self.busy
+                && devices.permits(crate::actions::HOTKEY_COMMANDS[index])
                 && (checked(self.rvc_enabled)
                     || !matches!(
                         crate::actions::HOTKEY_COMMANDS[index],
@@ -736,6 +924,12 @@ impl SettingsWindow {
             }
             let _ = EnableWindow(self.noise, enabled);
             let _ = EnableWindow(self.devices[1].handle, enabled);
+            for (i, selected) in self.selected_devices().outputs.into_iter().enumerate() {
+                if !selected {
+                    set_checked(self.outputs[i], false);
+                }
+                let _ = EnableWindow(self.outputs[i], !self.busy && selected);
+            }
         }
         self.refresh_hotkey_controls();
     }
@@ -747,6 +941,7 @@ impl SettingsWindow {
     }
     pub fn sync_shortcut(&mut self, action: usize, settings: &Settings) {
         self.base = settings.clone();
+        let selected = self.selected_devices().outputs;
         match action {
             crate::actions::OVERLAY => select(
                 self.overlay,
@@ -755,9 +950,15 @@ impl SettingsWindow {
                     .position(|m| *m == settings.overlay_mode)
                     .unwrap(),
             ),
-            crate::actions::OUTPUT1 => set_checked(self.outputs[0], settings.cable_enabled),
-            crate::actions::OUTPUT2 => set_checked(self.outputs[1], settings.voice_input_enabled),
-            crate::actions::MONITOR => set_checked(self.outputs[2], settings.monitoring),
+            crate::actions::OUTPUT1 => {
+                set_checked(self.outputs[0], selected[0] && settings.cable_enabled)
+            }
+            crate::actions::OUTPUT2 => {
+                set_checked(self.outputs[1], selected[1] && settings.voice_input_enabled)
+            }
+            crate::actions::MONITOR => {
+                set_checked(self.outputs[2], selected[2] && settings.monitoring)
+            }
             crate::actions::NOISE => set_checked(self.noise, settings.noise_suppression()),
             _ => (),
         }
@@ -765,6 +966,10 @@ impl SettingsWindow {
     }
     pub fn applied(&mut self, settings: &Settings) {
         self.base = settings.clone();
+        self.show_unselected = false;
+        if unsafe { SendMessageW(self.tab, TCM_GETCURSEL, None, None).0 } == 0 {
+            self.layout_device_rows();
+        }
         // 「有効」だけONでキーが「なし」の場合も、保存結果へ表示を合わせる。
         for (row, key) in self.keys.iter().zip(&settings.hotkeys) {
             set_checked(row[0], key.is_assigned());
@@ -777,6 +982,7 @@ impl SettingsWindow {
     }
     pub(super) fn read(&self) -> Result<Settings, String> {
         let mut settings = self.base.clone();
+        settings.device_selection_revision = 1;
         settings.rvc_enabled = checked(self.rvc_enabled);
         let device = self
             .sound_device
@@ -849,13 +1055,15 @@ impl SettingsWindow {
         (settings.cable_id, settings.cable_name) = chosen[2].clone();
         (settings.voice_input_id, settings.voice_input_name) = chosen[3].clone();
         (settings.monitor_id, settings.monitor_name) = chosen[4].clone();
-        settings.startup_mode = match selection(self.startup) {
-            1 => Some(Mode::Direct),
-            2 => Some(Mode::Rvc),
-            3 => Some(Mode::SpeakerRvc),
-            4 => Some(Mode::Muted),
-            _ => None,
-        };
+        settings.startup_mode = self
+            .startup_modes
+            .get(selection(self.startup))
+            .copied()
+            .flatten();
+        let selected = settings.device_selection().outputs;
+        settings.cable_enabled &= selected[0];
+        settings.voice_input_enabled &= selected[1];
+        settings.monitoring &= selected[2];
         for p in self.parameters.iter().filter(|_| settings.rvc_enabled) {
             let value = parse_parameter(&p.schema, &text(p.handle), checked(p.handle))?;
             let previous = self
@@ -882,6 +1090,20 @@ impl SettingsWindow {
                     Err(e) => self.message(&e),
                 },
                 CANCEL => return Some(Action::Close),
+                RESET_KEYS => self.reset_keys(),
+                RESET_SOUNDS => self.reset_sounds(),
+                SHOW_UNSELECTED => {
+                    self.show_unselected = !self.show_unselected;
+                    self.layout_device_rows();
+                }
+                210..=214 => {
+                    if action <= 211 {
+                        self.refresh_startup_modes();
+                    }
+                    self.refresh_rvc_controls();
+                    self.layout_device_rows();
+                }
+                220 => self.refresh_startup_modes(),
                 10 => self.page(0),
                 11 => self.page(1),
                 12 => self.page(2),
@@ -947,6 +1169,14 @@ impl SettingsWindow {
             }
         }
         None
+    }
+}
+
+fn primary_key_label(key: &Hotkey) -> &str {
+    if key.key == "None" {
+        "なし"
+    } else {
+        &key.key
     }
 }
 

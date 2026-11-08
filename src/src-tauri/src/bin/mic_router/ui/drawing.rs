@@ -221,6 +221,13 @@ pub(super) unsafe fn draw_frame(
             ("入力", INPUT_TOP),
             ("出力", OUTPUT_TOP),
         ] {
+            if top == OUTPUT_TOP
+                && !controls
+                    .iter()
+                    .any(|control| control.rect.top == OUTPUT_TOP)
+            {
+                continue;
+            }
             label_at(
                 dc,
                 label,

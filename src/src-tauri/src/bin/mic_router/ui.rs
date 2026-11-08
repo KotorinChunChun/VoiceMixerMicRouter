@@ -92,6 +92,7 @@ unsafe extern "system" fn proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LR
 }
 pub struct Ui {
     pub rvc_enabled: bool,
+    pub devices: crate::config::DeviceSelection,
     hwnd: HWND,
     overlay: Overlay,
     data: NOTIFYICONDATAW,
@@ -178,6 +179,7 @@ impl Ui {
             };
             let mut ui = Self {
                 rvc_enabled: true,
+                devices: crate::config::DeviceSelection::default(),
                 hwnd,
                 overlay,
                 data,
@@ -223,12 +225,13 @@ impl Ui {
         }
     }
     pub fn set_hotkeys(&mut self, values: &[Hotkey; HOTKEY_COUNT]) -> Result<(), String> {
-        self.set_hotkeys_for_rvc(values, self.rvc_enabled)
+        self.set_hotkeys_for(values, self.rvc_enabled, self.devices)
     }
-    pub fn set_hotkeys_for_rvc(
+    pub fn set_hotkeys_for(
         &mut self,
         values: &[Hotkey; HOTKEY_COUNT],
         rvc_enabled: bool,
+        devices: crate::config::DeviceSelection,
     ) -> Result<(), String> {
         let bindings: Vec<_> = values
             .iter()
@@ -236,7 +239,9 @@ impl Ui {
             .map(|(i, key)| {
                 let action = HOTKEY_COMMANDS[i];
                 let mut key = key.clone();
-                if !rvc_enabled && matches!(action, RVC | SPK_RVC | NOISE) {
+                if !devices.permits(action)
+                    || !rvc_enabled && matches!(action, RVC | SPK_RVC | NOISE)
+                {
                     key.enabled = false;
                 }
                 (action, key)
@@ -246,7 +251,6 @@ impl Ui {
             .as_ref()
             .ok_or("キー検出が開始されていません")?
             .set_bindings(&bindings)?;
-        self.rvc_enabled = rvc_enabled;
         self.shortcut_labels = std::array::from_fn(|i| values[i].label());
         self.shortcut_keys = std::array::from_fn(|i| values[i].key_label().into());
         self.hotkey = values[2].label();
@@ -306,26 +310,40 @@ impl Ui {
         } else {
             "RVCノイズ抑制 ON"
         };
-        let state = format!(
-            "表示{}{}  {}{} / {}{}{} {}{}{} {}{}{}",
+        let mut state = format!(
+            "表示{}{}  {}{}",
             shortcut_badge(&self.shortcut_keys, OVERLAY),
             self.overlay_mode.label(),
             noise_state,
             shortcut_badge(&self.shortcut_keys, NOISE),
-            self.output_labels[0],
-            shortcut_badge(&self.shortcut_keys, OUTPUT1),
-            output_status(self.output_holds[0], self.cable_enabled),
-            self.output_labels[1],
-            shortcut_badge(&self.shortcut_keys, OUTPUT2),
-            output_status(self.output_holds[1], self.voice_input_enabled),
-            self.output_labels[2],
-            shortcut_badge(&self.shortcut_keys, MONITOR),
-            output_status(self.output_holds[2], self.monitoring),
         );
+        let output_summary = [
+            (OUTPUT1, self.cable_enabled),
+            (OUTPUT2, self.voice_input_enabled),
+            (MONITOR, self.monitoring),
+        ]
+        .into_iter()
+        .enumerate()
+        .filter(|(i, _)| self.devices.outputs[*i])
+        .map(|(i, (action, on))| {
+            format!(
+                "{}{}{}",
+                self.output_labels[i],
+                shortcut_badge(&self.shortcut_keys, action),
+                output_status(self.output_holds[i], on)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+        if !output_summary.is_empty() {
+            state.push_str(" / ");
+            state.push_str(&output_summary);
+        }
         let changed = self.overlay.set_content(
             (title.clone(), state.clone(), detail, color, error),
             Buttons {
                 rvc_enabled: self.rvc_enabled,
+                devices: self.devices,
                 phase,
                 keys: &self.shortcut_keys,
                 output_labels: &self.output_labels,
@@ -378,6 +396,15 @@ impl Ui {
         unsafe {
             let menu = CreatePopupMenu().map_err(|e| e.to_string())?;
             let append = |id, text: &str, checked: bool| {
+                let route_action = match id {
+                    21 => DIRECT,
+                    22 => RVC,
+                    24 => SPK_RVC,
+                    _ => id,
+                };
+                if !self.devices.permits(route_action) {
+                    return Ok(());
+                }
                 let label = shortcut_index(id).map_or_else(
                     || text.to_owned(),
                     |index| format!("{text}\t{}", self.shortcut_labels[index]),

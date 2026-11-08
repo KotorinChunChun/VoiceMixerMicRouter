@@ -40,6 +40,20 @@ pub(super) fn select(hwnd: HWND, index: usize) {
         SendMessageW(hwnd, CB_SETCURSEL, Some(WPARAM(index)), None);
     }
 }
+pub(super) fn select_label(hwnd: HWND, label: &str) {
+    let index = unsafe {
+        SendMessageW(
+            hwnd,
+            CB_FINDSTRINGEXACT,
+            Some(WPARAM(usize::MAX)),
+            Some(LPARAM(wide(label).as_ptr() as isize)),
+        )
+        .0
+    };
+    if index >= 0 {
+        select(hwnd, index as usize);
+    }
+}
 
 impl SettingsWindow {
     #[allow(clippy::too_many_arguments)]
