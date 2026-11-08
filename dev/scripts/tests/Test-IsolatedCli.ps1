@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 $exe = (Resolve-Path -LiteralPath $Executable).Path
 $root = Split-Path (Split-Path (Split-Path $PSScriptRoot))
 $fixture = Join-Path $PSScriptRoot 'fixtures/isolated-cli.json'
+$routeFixture = Join-Path $PSScriptRoot 'fixtures/isolated-route.json'
 $version = (Get-Content -LiteralPath (Join-Path $root 'tool.json') -Raw | ConvertFrom-Json).version
 $run = Join-Path $root ("dev/history/v$version/logs/isolated-cli-" + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $run | Out-Null
@@ -10,6 +11,9 @@ New-Item -ItemType Directory -Path $run | Out-Null
 function Check([bool]$Ok, [string]$Label) {
     if (-not $Ok) { throw $Label }
     "PASS: $Label"
+}
+function Test-Peaks($Outputs, [double]$Peak) {
+    return ($Outputs.Count -eq 3 -and @($Outputs | Where-Object { $null -eq $_.peak -or $_.peak -ne $Peak }).Count -eq 0)
 }
 function Read-ResidentPids {
     @(Get-Process VoiceMixerMicRouter,voicemixer-mic -ErrorAction SilentlyContinue |
@@ -37,7 +41,7 @@ function Read-Hash([string]$File) {
 
 $pids = Read-ResidentPids
 $before = @{}
-foreach ($file in @($fixture) + $ProtectedSettings) { $before[$file] = Read-Hash $file }
+foreach ($file in @($fixture, $routeFixture) + $ProtectedSettings) { $before[$file] = Read-Hash $file }
 
 $report = Invoke-Scenario 'success' $fixture 0
 $s = $report.steps
@@ -84,6 +88,35 @@ $errors = @($errorReport.steps | Where-Object { -not $_.ok })
 Check (-not $errorReport.ok -and ($errors.step -join ',') -eq '2,4,5,6,7,8') '操作エラーのJSONと終了コード1'
 Check ($errorReport.steps[2].detail.applied.rvc_parameters.pitch -eq 10 -and
        $errorReport.steps[2].detail.draft.rvc_parameters.pitch -eq 500 -and $errorReport.steps[-1].ok) '適用失敗時は設定を保持し後続も報告'
+
+$routeReport = Invoke-Scenario 'virtual-route' $routeFixture 1
+$routes = @{}
+foreach ($step in $routeReport.steps) { $routes[[int]$step.step] = $step }
+Check (-not $routeReport.ok -and $routes.Count -eq 35 -and
+       (($routeReport.steps | Where-Object { -not $_.ok }).step -join ',') -eq '18,24,26,29,35') '仮想経路35操作と想定した5件のエラー'
+Check ($null -eq $routes[3].detail.input -and (Test-Peaks $routes[3].detail.outputs 0) -and
+       $routes[5].detail.input.endpoint_id -eq 'fixture-mic' -and -not $routes[5].detail.simulated_rvc -and
+       (Test-Peaks $routes[5].detail.outputs 0.25)) '送信停止と既定マイク原音の実グラフ出力'
+Check ($routes[7].detail.input.kind -eq 'microphone' -and $routes[7].detail.simulated_rvc -and
+       (Test-Peaks $routes[7].detail.outputs 0.5) -and
+       $routes[9].detail.input.kind -eq 'speaker' -and $routes[9].detail.input.endpoint_id -eq 'fixture-loopback' -and
+       (Test-Peaks $routes[9].detail.outputs 0.75) -and
+       ($routes[9].detail.outputs.endpoint_id -join ',') -eq 'fixture-out1,fixture-out2,fixture-out3') 'MIC-RVCとSPK-RVCの模擬信号、3出力と既定先の解決'
+Check (($routes[11].detail.outputs.active -join ',') -eq 'False,True,False' -and
+       $null -eq $routes[11].detail.outputs[0].peak -and $routes[11].detail.outputs[1].peak -eq 0.75 -and
+       $null -eq $routes[11].detail.outputs[2].peak -and
+       ($routes[13].detail.outputs.active -join ',') -eq 'False,True,True' -and
+       $routes[13].detail.outputs[2].peak -eq 0.75 -and
+       (Test-Peaks $routes[16].detail.outputs 0.75)) '出力押下の排他、同時押下と解放後の復元'
+Check ($routes[18].error -match '循環' -and $routes[19].detail.input.endpoint_id -eq 'fixture-loopback' -and
+       ($routes[22].detail.outputs.active -join ',') -eq 'True,True,False' -and
+       $routes[22].detail.outputs[2].endpoint_id -eq 'fixture-out1' -and
+       $null -eq $routes[22].detail.outputs[2].peak) '既定先の解決後に循環を拒否し、重複出力を抑制'
+Check ($routes[24].error -match '未接続.*fixture-missing' -and $routes[26].error -match '未接続.*fixture-missing' -and
+       $routes[29].error -match '未接続.*fixture-missing' -and $routes[30].detail.input.kind -eq 'speaker' -and
+       $routes[30].detail.outputs[1].peak -eq 0.75 -and $routes[32].detail.outputs[0].peak -eq 0 -and
+       $routes[35].error -match '既定先がありません' -and $routes[35].state.mode -eq 'muted') '未接続、既定先なし、失敗後に適用済みの経路を維持'
+
 $bad = Join-Path $run 'bad-input.json'
 '{not json}' | Set-Content -LiteralPath $bad -Encoding utf8
 $badReport = Invoke-Scenario 'bad-json' $bad 2

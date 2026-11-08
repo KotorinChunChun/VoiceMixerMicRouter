@@ -7,7 +7,7 @@ mod session;
 
 pub use routing::select_graph;
 #[cfg(windows)]
-pub(crate) use routing::validate_speaker_route_with;
+pub(crate) use routing::{enabled_outputs_with, validate_speaker_route_with};
 pub use session::spawn;
 
 use super::config::{write_json, Mode, Settings};

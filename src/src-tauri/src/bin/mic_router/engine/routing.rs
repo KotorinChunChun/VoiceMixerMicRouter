@@ -79,7 +79,7 @@ pub(crate) fn validate_speaker_route_with(
 pub(super) fn enabled_outputs(settings: &Settings, mode: Mode) -> [bool; 3] {
     enabled_outputs_with(settings, mode, resolve_render)
 }
-pub(super) fn enabled_outputs_with(
+pub(crate) fn enabled_outputs_with(
     settings: &Settings,
     mode: Mode,
     mut resolve: impl FnMut(&str) -> Result<String, String>,

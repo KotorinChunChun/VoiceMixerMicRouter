@@ -56,12 +56,34 @@ $report.steps | Select-Object step, op, ok
 | `settings_apply` / `restart` | 下書きの検証と適用、または適用済み設定のJSONからの復元と起動モード判定。再起動時に下書きと押下状態を解放する |
 | `mode` / `toggle_mode` / `release_rvc` / `toggle_noise` | モード切替、RVC解放、短いノイズ抑制の設定。 `mode` の値は `direct`、`rvc`、`speaker_rvc`、`muted` |
 | `output_toggle` / `output_hold` | `output` に1〜3、押下操作では `pressed` に真偽値を指定する。通常・押下・実効出力をそれぞれ `state.outputs` で確認できる |
+| `route_probe` | `devices` を指定したシナリオで、現在の入力・出力の計画と、合成信号を処理した各出力のピークを `detail` に出す |
 | `sound_preview` | `choice` に0〜7を指定する。効果音の波形を生成し、フレーム数、ピーク、試聴の出力先を報告する |
 | `overlay_cycle` / `overlay_show` / `overlay_elapse` | 表示モード切替、再表示、経過時間の模擬。経過時間は `milliseconds` で進め、表示状態と残り秒数を確認する |
 
 各操作は `ok` と操作後の `state` を返します。操作が失敗した場合は `error` に理由を出し、後続の操作も実行します。終了コードは、すべての操作が成功した場合は0、失敗した操作がある場合は1、入力JSONや引数などに問題があり試験を開始できなかった場合は2です。`--config` や `--stop` などの通常の引数とは併用できません。
 
-設定の検証、音声経路の生成、効果音の波形、オーバーレイの表示条件を確認します。Windowsのキー入力・実画面、音声の入出力と試聴、実デバイスの接続やRVCモデルの推論は、対応するGUI試験や実機診断で確認します。
+設定の検証、音声経路の生成、効果音の波形、オーバーレイの表示条件を確認します。Windowsのキー入力・実画面、実音声の入出力と試聴、実デバイスの接続やRVCモデルの推論は、対応するGUI試験や実機診断で確認します。
+
+### 仮想デバイスで入力切替と複数出力を確認する
+
+この確認には `route_probe` を含むソースからビルドしたEXEを使います。[仮想経路のシナリオ](../dev/scripts/tests/fixtures/isolated-route.json)では、`devices.capture` と `devices.render` の `endpoints` に接続中とみなすIDを並べ、任意の `console` と `communications` で既定先を指定します。スピーカーの取り込みと3系統の出力は `render` に属します。`devices` を省略した既存シナリオは、従来どおりデバイスIDを論理名として扱います。
+
+```powershell
+cargo build --locked --manifest-path .\src\src-tauri\Cargo.toml --bin voicemixer-mic
+$report = & .\src\src-tauri\target\debug\voicemixer-mic.exe --test-scenario `
+    .\dev\scripts\tests\fixtures\isolated-route.json | ConvertFrom-Json
+$report.steps | Where-Object op -eq 'route_probe' | ForEach-Object {
+    [pscustomobject]@{
+        step = $_.step; mode = $_.state.mode; input = $_.detail.input.endpoint_id
+        outputs = $_.detail.outputs | ConvertTo-Json -Compress
+    }
+}
+$report.steps | Where-Object { -not $_.ok } | Select-Object step, error
+```
+
+`route_probe` は適用済み設定と押下状態から、その時点の製品グラフを作り、メモリー内の音声処理で出力を確認します。MICのピークは `0.25`、MIC-RVCは `0.5`、SPK-RVCは `0.75`、送信停止中の有効出力は `0` です。RVCの代わりに振幅を2倍にする試験用処理を使います。無効または重複で除外された出力の `peak` は `null` です。
+
+サンプルは同時押下と解放、既定先の解決後に検出する循環・重複、未接続、既定先なしを含みます。想定した5件の操作エラーがあるため終了コードは1です。各エラーの後も、それ以前に適用した設定とモードを確認できます。
 
 配布候補EXEのJSON出力と終了コードを検査するには、`Test-IsolatedCli.ps1` に対象EXEを指定します。 `-ProtectedSettings` を指定すると、試験前後でそのファイルのハッシュも照合します。
 

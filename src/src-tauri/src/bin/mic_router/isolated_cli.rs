@@ -1,4 +1,7 @@
 //! 操作を同一プロセス内で検証するCLI。常駐IPC・設定ファイル・実デバイスを使用しない。
+#[path = "isolated_cli/route.rs"]
+mod route;
+
 use crate::{
     config::{
         default_hotkeys, initial_rvc_parameters, Hotkey, Mode, Settings, APP_VERSION,
@@ -26,6 +29,7 @@ use std::{
 #[serde(deny_unknown_fields)]
 struct Scenario {
     schema_version: u8,
+    devices: Option<route::Devices>,
     steps: Vec<Operation>,
 }
 
@@ -44,6 +48,7 @@ enum Operation {
     ToggleNoise,
     OutputToggle { output: u8 },
     OutputHold { output: u8, pressed: bool },
+    RouteProbe,
     SoundPreview { choice: u8 },
     OverlayCycle,
     OverlayShow,
@@ -66,10 +71,11 @@ struct State {
     held: [bool; 3],
     overlay_elapsed: Duration,
     schema: Vec<ParameterDescriptor>,
+    devices: Option<route::Devices>,
 }
 
 impl State {
-    fn new(directory: &Path) -> Result<Self, String> {
+    fn new(directory: &Path, devices: Option<route::Devices>) -> Result<Self, String> {
         let schema = serde_json::from_str::<PluginPackageManifest>(include_str!(
             "../../../../../plugins/rvc-cuda/plugin.json"
         ))
@@ -79,20 +85,26 @@ impl State {
         let mut applied = Settings::defaults(directory.to_path_buf());
         applied.reset_basic();
         applied.last_mode = Mode::Muted;
-        Self::check_route(&applied, Mode::Muted, [false; 3])?;
-        Ok(Self {
+        let state = Self {
             draft: applied.clone(),
             applied,
             mode: Mode::Muted,
             held: [false; 3],
             overlay_elapsed: Duration::ZERO,
             schema,
-        })
+            devices,
+        };
+        state.check_route(&state.applied, state.mode, state.held)?;
+        Ok(state)
     }
 
-    fn check_route(settings: &Settings, mode: Mode, held: [bool; 3]) -> Result<(), String> {
+    fn check_route(&self, settings: &Settings, mode: Mode, held: [bool; 3]) -> Result<(), String> {
         settings.validate()?;
         let effective = settings.with_output_holds(held);
+        if let Some(devices) = &self.devices {
+            devices.validate_speaker_route(settings, mode)?;
+            return devices.plan(&effective, mode).map(|_| ());
+        }
         // 隔離内では指定された論理IDを使う。OSの既定デバイス解決は行わない。
         validate_speaker_route_with(settings, mode, |id| Ok(id.to_owned()))?;
         validate_speaker_route_with(&effective, mode, |id| Ok(id.to_owned()))?;
@@ -107,7 +119,7 @@ impl State {
         held: [bool; 3],
     ) -> Result<(), String> {
         let held = settings.device_selection().filter_holds(held);
-        Self::check_route(&settings, mode, held)?;
+        self.check_route(&settings, mode, held)?;
         settings.last_mode = mode;
         self.applied = settings;
         self.draft.last_mode = mode;
@@ -307,6 +319,14 @@ impl State {
                     return Ok(self.sound_result(self.applied.switch_sounds[4 + index]));
                 }
             }
+            Operation::RouteProbe => {
+                let devices = self
+                    .devices
+                    .as_ref()
+                    .ok_or("route_probeにはdevicesを指定してください")?;
+                let effective = self.applied.with_output_holds(self.held);
+                return devices.plan(&effective, self.mode)?.probe();
+            }
             Operation::SoundPreview { choice } => {
                 if sounds::LABELS.get(choice as usize).is_none() {
                     return Err("効果音は0〜7で指定してください".into());
@@ -379,7 +399,10 @@ fn evaluate(path: &Path) -> Result<(bool, Vec<Value>), String> {
     if scenario.schema_version != 1 || !(1..=256).contains(&scenario.steps.len()) {
         return Err("schema_versionは1、stepsは1〜256件を指定してください".into());
     }
-    let mut state = State::new(path.parent().ok_or("シナリオの配置先がありません")?)?;
+    let mut state = State::new(
+        path.parent().ok_or("シナリオの配置先がありません")?,
+        scenario.devices,
+    )?;
     let mut ok = true;
     let mut results = Vec::with_capacity(scenario.steps.len());
     for (index, operation) in scenario.steps.into_iter().enumerate() {

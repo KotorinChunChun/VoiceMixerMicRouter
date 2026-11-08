@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "devices": {
+    "capture": {"endpoints": ["fixture-mic"], "console": "fixture-mic"},
+    "render": {
+      "endpoints": ["fixture-loopback", "fixture-out1", "fixture-out2", "fixture-out3"],
+      "console": "fixture-out1",
+      "communications": "fixture-out3"
+    }
+  },
+  "steps": [
+    {"op": "settings_patch", "values": {
+      "rvc_enabled": true,
+      "speaker_id": "fixture-loopback",
+      "cable_enabled": true,
+      "voice_input_id": "fixture-out2", "voice_input_enabled": true,
+      "monitor_id": "default://communications", "monitoring": true
+    }},
+    {"op": "settings_apply"},
+    {"op": "route_probe"},
+    {"op": "mode", "mode": "direct"},
+    {"op": "route_probe"},
+    {"op": "mode", "mode": "rvc"},
+    {"op": "route_probe"},
+    {"op": "mode", "mode": "speaker_rvc"},
+    {"op": "route_probe"},
+    {"op": "output_hold", "output": 2, "pressed": true},
+    {"op": "route_probe"},
+    {"op": "output_hold", "output": 3, "pressed": true},
+    {"op": "route_probe"},
+    {"op": "output_hold", "output": 2, "pressed": false},
+    {"op": "output_hold", "output": 3, "pressed": false},
+    {"op": "route_probe"},
+    {"op": "settings_patch", "values": {"speaker_id": "default://console"}},
+    {"op": "settings_apply"},
+    {"op": "route_probe"},
+    {"op": "settings_patch", "values": {"speaker_id": "fixture-loopback", "monitor_id": "fixture-out1"}},
+    {"op": "settings_apply"},
+    {"op": "route_probe"},
+    {"op": "settings_patch", "values": {"speaker_id": "fixture-missing"}},
+    {"op": "settings_apply"},
+    {"op": "settings_patch", "values": {"speaker_id": "fixture-loopback", "voice_input_id": "fixture-missing"}},
+    {"op": "settings_apply"},
+    {"op": "settings_patch", "values": {"voice_input_id": "fixture-out2", "microphone_id": "fixture-missing"}},
+    {"op": "settings_apply"},
+    {"op": "mode", "mode": "direct"},
+    {"op": "route_probe"},
+    {"op": "mode", "mode": "muted"},
+    {"op": "route_probe"},
+    {"op": "settings_patch", "values": {"microphone_id": "default://communications"}},
+    {"op": "settings_apply"},
+    {"op": "mode", "mode": "rvc"}
+  ]
+}
