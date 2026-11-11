@@ -23,7 +23,7 @@ cd C:\develop\VoiceMixerMicRouter
 pwsh -File .\dev\scripts\stage-rvc-cuda-plugin.ps1 -SourceRoot 'D:\RVC環境' -KahoRoot 'D:\利用許諾のあるモデル'
 ```
 
-既存環境をそのまま使う場合は、停止中のmic-settings.jsonのplugin_directoryへ、そのrvc-cudaを含むpluginsフォルダーを指定します。
+既存環境をそのまま使う場合は、常駐を停止してから、mic-settings.jsonのplugin_directoryに既存のrvc-cudaを含むpluginsフォルダーを指定します。
 
 モデル・Indexはプラグイン基準の相対パス、または別フォルダーの絶対パスで指定できます。Index適用率0ではIndexを使いません。RVC設定画面の各項目にマウスを重ねると意味・範囲・再起動要否を表示します。
 

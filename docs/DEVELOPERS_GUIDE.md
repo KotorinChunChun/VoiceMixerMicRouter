@@ -2,7 +2,7 @@
 
 ## 構成
 
-src/src-tauri/src/bin/voicemixer-mic.rsとmic_router配下がアプリです。src/src-tauri/srcの他のRustモジュールは同梱音声Backendで、src/src-tauri/resourcesとplugins/voice-extractionはBackendの埋め込み素材です。plugins/rvc-cudaはRVCのプロトコル・Python処理・設定スキーマを保持します。モデルやPython環境はGit対象外です。
+アプリのコードはsrc/src-tauri/src/bin/voicemixer-mic.rsとmic_router配下にあります。src/src-tauri/srcの他のRustモジュールは同梱の音声Backendです。src/src-tauri/resourcesとplugins/voice-extractionはBackendに埋め込む素材です。plugins/rvc-cudaにはRVCのプロトコル、Python処理、設定スキーマがあります。モデルやPython環境はGit対象外です。
 
 元のVoiceMixerチェックアウトや非公開Gitへの依存はありません。Cargo.lockを追跡します。旧Tauri用cfgはBackendのソース互換のため残っていますが、対応featureは公開せず、常駐単独のビルドから除外します。
 
@@ -17,7 +17,7 @@ pwsh -File .\dev\scripts\Install-MicRouter.ps1 -SkipBuild -NoStartup -NoStart
 pwsh -File .\dev\scripts\Start-MicRouter.ps1 -Mode Settings
 ```
 
-初回配備は実デバイスから設定を生成します。RVCを使うにはplugins/rvc-cuda/README.mdの環境を別途用意します。既存の実行環境を使う場合はplugin_directoryをそのpluginsフォルダーへ設定します。モデル／Indexは絶対パスにも対応します。
+初回配備では実デバイスから設定を生成します。RVCを使うにはplugins/rvc-cuda/README.mdに記載の環境を別途用意します。既存の実行環境を使う場合は、そのpluginsフォルダーをplugin_directoryに指定します。モデル／Indexは絶対パスでも指定できます。
 
 デバッグ起動は次のとおりです。設定を本番と共用する場合、同じWindowsセッションの常駐が停止していることを先に確認します。
 
@@ -33,7 +33,7 @@ cargo test --manifest-path .\src\src-tauri\Cargo.toml --bin voicemixer-mic setti
 cargo test --manifest-path .\src\src-tauri\Cargo.toml --bin voicemixer-mic native_commands_menu_icons_and_nonactivating_overlay -- --ignored --test-threads=1
 ```
 
-音声試験のignoreは環境条件を確認して対象だけ解除します。--ignoredのみで全試験を走らせないでください。モデル、OS既定変更、録音等の追加条件は各テストに記載します。
+音声試験は環境条件を確認してから、対象の試験だけignoreを解除します。--ignoredだけを指定して全試験を実行しないでください。モデル、OSの既定設定の変更、録音などの追加条件は各テストに記載しています。
 
 ## 常駐と分離したCLI試験
 
@@ -59,7 +59,7 @@ $report.steps | Select-Object step, op, ok
 | `sound_preview` | `choice` に0〜7を指定する。効果音の波形を生成し、フレーム数、ピーク、試聴の出力先を報告する |
 | `overlay_cycle` / `overlay_show` / `overlay_elapse` | 表示モード切替、再表示、経過時間の模擬。経過時間は `milliseconds` で進め、表示状態と残り秒数を確認する |
 
-各操作は `ok` と操作後の `state` を返します。操作が失敗した場合は `error` に理由を出し、後続操作も実行します。終了コードは全件成功が0、操作の失敗ありは1、入力JSON・引数など試験開始前の失敗は2です。 `--config` や `--stop` などの通常の引数とは併用できません。
+各操作は `ok` と操作後の `state` を返します。操作が失敗した場合は `error` に理由を出し、後続の操作も実行します。終了コードは、すべての操作が成功した場合は0、失敗した操作がある場合は1、入力JSONや引数などに問題があり試験を開始できなかった場合は2です。`--config` や `--stop` などの通常の引数とは併用できません。
 
 設定の検証、音声経路の生成、効果音の波形、オーバーレイの表示条件を確認します。Windowsのキー入力・実画面、音声の入出力と試聴、実デバイスの接続やRVCモデルの推論は、対応するGUI試験や実機診断で確認します。
 
@@ -79,4 +79,4 @@ pwsh -File .\dev\scripts\Build-Installer.ps1 -RequireClean
 
 配布EXEは静的CRT、helperは自己完結型です。artifacts/installersの実行別フォルダーへsetup、製品別台帳、SHA256、ソースコミット／ファイル一覧を生成します。公開するのはsetup・台帳・SHA256と導入／登録案内です。公開ビルドに-SkipBuildを使わず、クリーンな採用ソースから作り直してください。
 
-通常常駐を終了してから、生成したsetupをTest-Installer.ps1の-Installerへ渡すと、隔離先で新規導入・設定編集中の更新拒否・同版の更新・削除・保持を確認します。既存の正式導入があるPCでは試験を拒否します。別セッション・実ログイン・KotorinToys本体UIは管理PCの受入対象です。
+通常の常駐を終了してから、生成したsetupをTest-Installer.ps1の-Installerに指定します。隔離先で新規導入、設定編集中の更新拒否、同じバージョンでの更新、削除、保持を確認できます。すでに正式導入したPCでは試験を拒否します。別セッション、実ログイン、KotorinToys本体の画面は管理PCで受入を確認します。
