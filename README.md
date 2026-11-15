@@ -55,3 +55,13 @@ VoiceMixer本体から独立したWin32アプリです。RVCモデルは初回�
 設定とモデルは更新時も保持してください。音声を止めるには送信停止へ切り替え、常駐自体を終えるときはトレイから終了します。モデルの利用条件は各配布元を確認してください。
 
 詳しい操作は[利用方法](docs/mic-resident.md)、トラブル時の確認とビルドは[開発者ガイド](docs/DEVELOPERS_GUIDE.md)に分けています。
+
+## 使用言語とライブラリ
+
+- 使用言語はRust（本体）、Python（音声抽出プラグイン）、C#（保守補助）です。
+- windows・wasapi（Windowsでの音声入出力）、nnnoiseless（ノイズ抑制）、hound・OxiAudio・mp3lame-encoder（音声ファイル処理）。音声抽出プラグインはPyTorch、torchaudio、DeepFilterNet、Demucsを使います。
+- 依存定義と資料 [本体の依存定義](src/src-tauri/Cargo.toml)・[音声抽出の依存定義](plugins/voice-extraction/requirements.txt)
+
+## ライセンス
+
+本アプリの独自コードと文書には[MITライセンス](LICENSE)が適用されます。第三者のコンポーネントや素材には、それぞれのライセンスが適用されます。
