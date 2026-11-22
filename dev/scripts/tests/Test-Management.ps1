@@ -45,6 +45,14 @@ function WaitSettingsReady([IntPtr]$window){
  }
  throw '表示後の設定画面の初期化が時間内に完了しません'
 }
+function WaitSettingsClosed([IntPtr]$window){
+ $deadline=[DateTime]::Now.AddSeconds(15)
+ while([DateTime]::Now -lt $deadline){
+  if(-not[Mic118Window]::IsWindowVisible($window)){return}
+  Start-Sleep -Milliseconds 50
+ }
+ throw '設定画面が時間内に閉じません'
+}
 $running=$null
 try{
  foreach($origin in 'host_manual','direct_task','via_kotorintoys'){
@@ -74,7 +82,7 @@ try{
    $stop=Request @{command='stop';expectedPid=$running.Id}
    Check ($stop.result -eq 'refused' -and -not$running.HasExited) '未保存設定画面を保護して正常停止を拒否'
    [void][Mic118Window]::PostMessage($window,273,[IntPtr]2,[IntPtr]0)
-   Start-Sleep -Milliseconds 250
+   WaitSettingsClosed $window
    $elapsed.Restart()
    $again=Request @{command='show';expectedPid=$running.Id}
    Write-Output ('閉じた後の設定表示の管理応答: '+$elapsed.ElapsedMilliseconds+' ms')
@@ -82,7 +90,7 @@ try{
    Check ($again.result -eq 'completed' -and [Mic118Window]::IsWindowVisible($window)) '閉じた後の設定画面を再表示'
    WaitSettingsReady $window
    [void][Mic118Window]::PostMessage($window,273,[IntPtr]2,[IntPtr]0)
-   Start-Sleep -Milliseconds 250
+   WaitSettingsClosed $window
   }
   $stop=Request @{command='stop';expectedPid=$running.Id}
   Check ($stop.result -eq 'accepted') '停止受理を応答'
