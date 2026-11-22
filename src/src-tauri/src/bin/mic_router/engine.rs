@@ -10,6 +10,39 @@ pub use routing::select_graph;
 pub(crate) use routing::{enabled_outputs_with, validate_speaker_route_with};
 pub use session::spawn;
 
+#[cfg(test)]
+mod codec_tests {
+    use audio_mixer_backend::{
+        audio::{buffer::AudioRingBuffer, graph::RecordingFormat},
+        recording::{codecs::{decode_audio_file, encode_audio_file}, writer::RecorderSink},
+    };
+
+    #[test]
+    fn flac_batch_and_streaming_roundtrip_preserve_samples_and_finalize_on_stop() {
+        let directory = tempfile::tempdir().unwrap();
+        for frames in [1, 15, 4096, 8193] {
+            let samples: Vec<f32> = (0..frames * 2)
+                .map(|index| ((index % 1024) as f32 - 512.0) / 1024.0)
+                .collect();
+            let batch = directory.path().join("batch.flac");
+            encode_audio_file(&batch, RecordingFormat::Flac, &samples).unwrap();
+            let ring = AudioRingBuffer::new(samples.len() + 2);
+            assert_eq!(ring.push_slice(&samples), samples.len());
+            let stream = directory.path().join("stream.flac");
+            let sink = RecorderSink::start_with_ring(&stream, RecordingFormat::Flac, ring).unwrap();
+            sink.stop().unwrap();
+            sink.stop().unwrap();
+            for path in [&batch, &stream] {
+                let decoded = decode_audio_file(path).unwrap();
+                assert_eq!(decoded.samples.len(), samples.len(), "{frames} frames");
+                for (actual, expected) in decoded.samples.iter().zip(&samples) {
+                    assert!((actual - expected).abs() < 0.000001, "{frames} frames");
+                }
+            }
+        }
+    }
+}
+
 use super::config::{write_json, Mode, Settings};
 use audio_mixer_backend::{audio::graph::NodeProperties, standalone::StandaloneSession};
 use routing::{enabled_outputs, validate_speaker_route};

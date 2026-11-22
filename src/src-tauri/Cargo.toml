@@ -1,8 +1,8 @@
 [package]
 name = "voicemixer-mic-router"
-version = "1.0.32"
+version = "1.0.33"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
 autobins = false
 autotests = false
 autoexamples = false
@@ -21,6 +21,9 @@ path = "src/bin/voicemixer-mic.rs"
 default = ["edge-websocket"]
 edge-websocket = ["dep:tokio", "dep:tokio-tungstenite", "dep:futures-util"]
 testing = []
+
+[patch.crates-io]
+flacenc = { path = "vendor/flacenc" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("tauri"))'] }

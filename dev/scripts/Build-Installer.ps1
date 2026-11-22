@@ -40,7 +40,10 @@ foreach($framework in $options.includedFrameworks){
  New-Item -ItemType Directory $notices -Force|Out-Null
  foreach($name in @('LICENSE.TXT','THIRD-PARTY-NOTICES.TXT')){Copy-Item -LiteralPath (Join-Path $package $name) -Destination $notices}
 }
-foreach($name in @('tool.json','README.md')){Copy-Item -LiteralPath (Join-Path $root $name) -Destination $payload}
+foreach($name in @('tool.json','README.md','LICENSE')){Copy-Item -LiteralPath (Join-Path $root $name) -Destination $payload}
+$flacLicense=Join-Path $payload 'licenses/flacenc'
+New-Item -ItemType Directory $flacLicense -Force|Out-Null
+foreach($name in @('LICENSE','LOCAL_CHANGES.md')){Copy-Item -LiteralPath (Join-Path $root "src/src-tauri/vendor/flacenc/$name") -Destination $flacLicense}
 New-Item -ItemType Directory (Join-Path $payload 'docs') -Force|Out-Null
 Copy-Item -Path (Join-Path $root 'docs/*') -Destination (Join-Path $payload 'docs') -Recurse
 $plugin=Join-Path $payload 'plugins/rvc-cuda'
