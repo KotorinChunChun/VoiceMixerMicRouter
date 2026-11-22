@@ -1,3 +1,4 @@
+// VoiceMixerMicRouterで2026-11-22に短い最終フレームへ対応。LOCAL_CHANGES.md参照。
 // Copyright 2022-2024 Google LLC
 // Copyright 2025- flacenc-rs developers
 //

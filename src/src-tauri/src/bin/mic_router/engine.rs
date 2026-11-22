@@ -14,7 +14,10 @@ pub use session::spawn;
 mod codec_tests {
     use audio_mixer_backend::{
         audio::{buffer::AudioRingBuffer, graph::RecordingFormat},
-        recording::{codecs::{decode_audio_file, encode_audio_file}, writer::RecorderSink},
+        recording::{
+            codecs::{decode_audio_file, encode_audio_file},
+            writer::RecorderSink,
+        },
     };
 
     #[test]

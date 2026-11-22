@@ -1,10 +1,9 @@
 //! 基本設定とRVC設定の構築・読み取り・操作。
 use super::super::{
     config::{
-        default_hotkeys, device_choices,
-        initial_rvc_parameters, is_default_device, DeviceSelection, Hotkey, KeyHandling, Mode,
-        ModifierSide, OverlayMode, Settings, HOTKEY_COUNT, HOTKEY_LABELS, NOISE_PARAMETER,
-        UNSELECTED,
+        default_hotkeys, device_choices, initial_rvc_parameters, is_default_device,
+        DeviceSelection, Hotkey, KeyHandling, Mode, ModifierSide, OverlayMode, Settings,
+        HOTKEY_COUNT, HOTKEY_LABELS, NOISE_PARAMETER, UNSELECTED,
     },
     ui,
 };
@@ -229,12 +228,22 @@ impl SettingsWindow {
                     return Err("設定タブを作成できません".into());
                 }
             }
-            s.build_basic_page(settings, inputs, outputs)?;
-            // 管理要求は基本設定が実際に表示された時点で応答する。
-            // 残りのコントロールが揃うまで操作を受け付けない。
-            s.page(0);
+            // 管理要求は読み込み中の画面が実際に表示された時点で応答する。
+            // デバイスとキーの選択欄が揃うまで操作を受け付けない。
+            s.message = s.control(
+                "STATIC",
+                "設定を読み込んでいます…",
+                0,
+                400,
+                20,
+                624,
+                CLIENT_WIDTH - 45,
+                22,
+                None,
+            )?;
             let _ = EnableWindow(hwnd, false);
             on_basic_ready(&s);
+            s.build_basic_page(settings, inputs, outputs)?;
             s.build_keys_page(settings)?;
             s.build_rvc_page(settings, schema)?;
             s.build_sounds_page(settings, outputs)?;
@@ -255,7 +264,7 @@ impl SettingsWindow {
                 )?;
             }
             s.refresh_rvc_controls();
-            s.message = s.control("STATIC", "", 0, 400, 20, 624, CLIENT_WIDTH - 45, 22, None)?;
+            set_text(s.message, "");
             s.save = s.control(
                 "BUTTON",
                 "適用",
@@ -872,9 +881,8 @@ impl SettingsWindow {
         .into_iter()
         .filter(|mode| {
             *mode == selected
-                || mode.is_none_or(|mode| {
-                    (rvc_enabled || !mode.is_rvc()) && devices.has_source(mode)
-                })
+                || mode
+                    .is_none_or(|mode| (rvc_enabled || !mode.is_rvc()) && devices.has_source(mode))
         })
         .collect();
         unsafe {
@@ -1029,7 +1037,8 @@ impl SettingsWindow {
                 && devices.permits(command)
                 && (checked(self.rvc_enabled) || !crate::actions::requires_rvc(command));
             let enabled = available && checked(row[0]);
-            let modifier_only = crate::actions::ptt_event(command).is_some() && selection(row[5]) == 0;
+            let modifier_only =
+                crate::actions::ptt_event(command).is_some() && selection(row[5]) == 0;
             if enabled && modifier_only {
                 select(row[6], 0);
             }
